@@ -1,11 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, screen, userEvent } from '@testing-library/react-native';
+import type { ReactElement } from 'react';
 import { Alert } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import { currencyApi, userApi } from '@/api/endpoints';
 import type { Session } from '@/api/types';
 import SettingsScreen from '@/app/(tabs)/settings';
+import { PasswordSection } from '@/components/settings/password-section';
+import { ProfileSection } from '@/components/settings/profile-section';
+import { SessionsSection } from '@/components/settings/sessions-section';
 import { user } from '@/test/fixtures';
 import { renderScreen } from '@/test/render-screen';
 
@@ -16,30 +20,40 @@ jest.mock('@/api/endpoints');
 jest.mock('@/session/session-context', () => ({ useCurrentUser: () => mockUser(), useSession: () => mockSession }));
 
 const NEW_PASSWORD = 'Subtrack#2027';
+const CURRENCIES = ['EUR', 'JOD', 'USD'];
 
-async function renderSettings() {
+/** Each section is tested on its own: several of them have a field with the same label. */
+async function renderSettings(section: ReactElement) {
   // Without a garbage-collection timer, so nothing is left running when the test ends.
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
   jest.spyOn(client, 'invalidateQueries');
-  await renderScreen(
-    <QueryClientProvider client={client}>
-      <SettingsScreen />
-    </QueryClientProvider>,
-  );
+  // The currency list is already loaded, so nothing is still arriving while a test runs.
+  client.setQueryData(['currencies'], CURRENCIES);
+  await renderScreen(<QueryClientProvider client={client}>{section}</QueryClientProvider>);
   return client;
 }
 
 beforeEach(() => {
   jest.clearAllMocks();
   mockUser.mockReturnValue(user({ phoneNumber: '+962791234567' }));
-  jest.mocked(currencyApi.list).mockResolvedValue(['EUR', 'JOD', 'USD']);
+  // Saving the profile reloads everything, the currency list included.
+  jest.mocked(currencyApi.list).mockResolvedValue(CURRENCIES);
+});
+
+describe('the settings screen', () => {
+  it('has a section for every part of the account', async () => {
+    await renderSettings(<SettingsScreen />);
+
+    for (const title of ['Profile', 'Email address', 'Change password', 'Two-factor authentication', 'Sessions', 'Delete account']) {
+      expect(screen.getByRole('header', { name: title })).toBeOnTheScreen();
+    }
+  });
 });
 
 describe('profile', () => {
   it('starts from the account as it is', async () => {
-    await renderSettings();
+    await renderSettings(<ProfileSection />);
 
-    expect(screen.getByText('Signed in as demo@subtrack.example')).toBeOnTheScreen();
     expect(screen.getByLabelText('Name')).toHaveDisplayValue('Demo User');
     expect(screen.getByLabelText('Phone number')).toHaveDisplayValue('+962791234567');
     expect(screen.getByLabelText('Default currency: USD')).toBeOnTheScreen();
@@ -48,7 +62,7 @@ describe('profile', () => {
   it('saves the new name, a cleaned-up phone number and the chosen currency', async () => {
     const saved = user({ displayName: 'Malik Demo', phoneNumber: '+962790000000', defaultCurrency: 'JOD' });
     jest.mocked(userApi.update).mockResolvedValue(saved);
-    const client = await renderSettings();
+    const client = await renderSettings(<ProfileSection />);
 
     await userEvent.clear(screen.getByLabelText('Name'));
     await userEvent.type(screen.getByLabelText('Name'), ' Malik Demo ');
@@ -65,7 +79,7 @@ describe('profile', () => {
   });
 
   it('stops a phone number without a country code before calling the API', async () => {
-    await renderSettings();
+    await renderSettings(<ProfileSection />);
 
     await userEvent.clear(screen.getByLabelText('Phone number'));
     await userEvent.type(screen.getByLabelText('Phone number'), '0791234567');
@@ -79,7 +93,7 @@ describe('profile', () => {
     jest.mocked(userApi.update).mockRejectedValue(
       new ApiError(400, 'VALIDATION', 'Check the form', { displayName: 'can only contain letters, spaces, apostrophes and hyphens' }),
     );
-    await renderSettings();
+    await renderSettings(<ProfileSection />);
 
     await userEvent.press(screen.getByRole('button', { name: 'Save profile' }));
 
@@ -94,7 +108,7 @@ describe('password', () => {
 
   it('changes the password and keeps the session the server hands back', async () => {
     jest.mocked(userApi.changePassword).mockResolvedValue(session);
-    await renderSettings();
+    await renderSettings(<PasswordSection />);
 
     await userEvent.type(screen.getByLabelText('Current password'), 'Subtrack#2026');
     await userEvent.type(screen.getByLabelText('New password'), NEW_PASSWORD);
@@ -109,7 +123,7 @@ describe('password', () => {
 
   it('says when the current password is wrong and keeps the session', async () => {
     jest.mocked(userApi.changePassword).mockRejectedValue(new ApiError(403, 'WRONG_PASSWORD', 'Your current password is incorrect'));
-    await renderSettings();
+    await renderSettings(<PasswordSection />);
 
     await userEvent.type(screen.getByLabelText('Current password'), 'not-my-password');
     await userEvent.type(screen.getByLabelText('New password'), NEW_PASSWORD);
@@ -120,7 +134,7 @@ describe('password', () => {
   });
 
   it('keeps the button off until the current password is typed and the new one is strong', async () => {
-    await renderSettings();
+    await renderSettings(<PasswordSection />);
     const button = () => screen.getByRole('button', { name: 'Change password' });
 
     await userEvent.type(screen.getByLabelText('New password'), NEW_PASSWORD);
@@ -137,7 +151,7 @@ describe('password', () => {
   it('lets an account that signed up with Google set its first password', async () => {
     mockUser.mockReturnValue(user({ hasPassword: false }));
     jest.mocked(userApi.changePassword).mockResolvedValue(session);
-    await renderSettings();
+    await renderSettings(<PasswordSection />);
 
     expect(screen.getByRole('header', { name: 'Set a password' })).toBeOnTheScreen();
     expect(screen.queryByLabelText('Current password')).not.toBeOnTheScreen();
@@ -152,7 +166,7 @@ describe('password', () => {
 
 describe('sessions', () => {
   it('signs out of this device', async () => {
-    await renderSettings();
+    await renderSettings(<SessionsSection />);
 
     await userEvent.press(screen.getByRole('button', { name: 'Sign out' }));
 
@@ -163,7 +177,7 @@ describe('sessions', () => {
   it('signs out everywhere only after the confirmation is accepted', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     jest.mocked(userApi.logoutEverywhere).mockResolvedValue(undefined);
-    await renderSettings();
+    await renderSettings(<SessionsSection />);
 
     await userEvent.press(screen.getByRole('button', { name: 'Sign out of all devices' }));
 
@@ -181,7 +195,7 @@ describe('sessions', () => {
   it('stays signed in when signing out everywhere fails', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     jest.mocked(userApi.logoutEverywhere).mockRejectedValue(new ApiError(0, 'NETWORK', 'Could not reach the server. Check your connection and try again.'));
-    await renderSettings();
+    await renderSettings(<SessionsSection />);
 
     await userEvent.press(screen.getByRole('button', { name: 'Sign out of all devices' }));
     const buttons = alert.mock.calls[0][2] ?? [];

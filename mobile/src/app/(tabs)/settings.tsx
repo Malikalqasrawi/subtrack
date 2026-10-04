@@ -1,9 +1,12 @@
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { DangerZone } from '@/components/settings/danger-zone';
+import { EmailSection } from '@/components/settings/email-section';
 import { PasswordSection } from '@/components/settings/password-section';
 import { ProfileSection } from '@/components/settings/profile-section';
 import { SessionsSection } from '@/components/settings/sessions-section';
+import { TwoFactorSection } from '@/components/settings/two-factor-section';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -18,8 +21,11 @@ export default function SettingsScreen() {
       <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <ProfileSection />
+          <EmailSection />
           <PasswordSection />
+          <TwoFactorSection />
           <SessionsSection />
+          <DangerZone />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

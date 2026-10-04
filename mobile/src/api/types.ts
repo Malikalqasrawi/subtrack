@@ -49,6 +49,13 @@ export type AuthResponse =
   | (Session & { twoFactorRequired: false })
   | { twoFactorRequired: true; challengeToken: string };
 
+export interface TwoFactorSetup {
+  /** The key to type into an authenticator app by hand. */
+  secret: string;
+  /** The same key as a link, for a QR code or to hand to an authenticator app. */
+  otpauthUri: string;
+}
+
 export interface SubscriptionRequest {
   name: string;
   amount: number;
