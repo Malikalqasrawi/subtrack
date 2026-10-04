@@ -152,7 +152,7 @@ cd backend && ./mvnw test
 cd frontend && npm run lint && npm test && npm run build
 ```
 
-83 backend tests and 38 frontend tests. They need no Docker, PostgreSQL, mail server, Google account or network: the backend runs against an in-memory H2 database in PostgreSQL mode, and the frontend tests replace the API.
+101 backend tests and 38 frontend tests. They need no Docker, PostgreSQL, mail server, Google account or network: the backend runs against an in-memory H2 database in PostgreSQL mode, and the frontend tests replace the API.
 
 | Backend test | Covers |
 |---|---|
@@ -165,6 +165,9 @@ cd frontend && npm run lint && npm test && npm run build
 | `StrongPasswordValidatorTest` | The password policy |
 | `BillingCycleTest` | Billing-date arithmetic for weekly, monthly, quarterly and yearly cycles, including month ends |
 | `SubscriptionReminderTest` | When a renewal needs a reminder, and that it is sent once |
+| `EmailOutboxTest` | An email from hand-over to the mail server: sent after commit, nothing sent after a rollback, encrypted while it waits, retried with growing waits, given up on after the fifth attempt, old ones deleted |
+| `EmailLayoutTest` | The HTML version of an email: the code box, the inbox preview, text from a user escaped |
+| `SmtpMailTransportTest` | Every email carries a plain-text and an HTML version |
 | `RateLimitFilterTest` | A bucket per client, `429` once it is empty, the first matching rule, paths without a rule |
 | `CachingExchangeRateProviderTest` | Cached rates, refresh after expiry, falling back when the rate service is down |
 
@@ -221,7 +224,7 @@ The backend is organised by feature. Each package owns its entity, repository, s
 | `insights` | Dashboard totals, 12-month projection, calendar |
 | `reminder` | Daily job that sends renewal reminders |
 | `currency` | Exchange rates and conversion |
-| `mail` | Sending email |
+| `mail` | The outbox every email goes through, retries, and the HTML layout |
 | `ratelimit` | Request rate limiting |
 | `common`, `config` | Base entity, error handling, security and bean configuration |
 
@@ -234,7 +237,7 @@ Where each principle shows up in the code:
 | **Abstraction** | `BaseEntity` holds the id and timestamps every entity shares. `ApiException` is the abstract base of every error the API returns on purpose; the exception handler knows only that type. |
 | **Encapsulation** | Entities have no setters. State changes go through methods that keep them valid: `User.markEmailVerified()`, `RefreshToken.revoke()`, `VerificationCode.registerFailedAttempt()`, `Subscription.markReminderSent()`. |
 | **Polymorphism** | `BillingCycle` is an enum whose constants each implement `advance` and `wholePeriodsBetween`. Shared logic such as `nextOccurrenceOnOrAfter` is written once against those two operations. `GoogleTokenVerifier` and `AppleTokenVerifier` extend the abstract `OidcTokenVerifier`, which holds everything the two providers share. `SignInResult` is a sealed interface with two cases, so the compiler forces every caller to handle "second factor still needed". |
-| **Interfaces to reduce coupling** | Services depend on `EmailSender`, `ExchangeRateProvider`, `RateLimiter`, `AccessTokenService`, `TwoFactorChallengeService`, `IdentityTokenVerifier`, `CodeGenerator` and `NotificationChannel`, never on SMTP, HTTP, Bucket4j, JWT or Google directly. The tests swap in a recording `EmailSender` and a fake `IdentityTokenVerifier` without touching production code. |
+| **Interfaces to reduce coupling** | Services depend on `EmailSender`, `MailTransport`, `ExchangeRateProvider`, `RateLimiter`, `AccessTokenService`, `TwoFactorChallengeService`, `IdentityTokenVerifier`, `CodeGenerator` and `NotificationChannel`, never on SMTP, HTTP, Bucket4j, JWT or Google directly. The tests swap in a recording `EmailSender` and a fake `IdentityTokenVerifier` without touching production code. |
 | **Open/closed** | A new reminder channel is a new `NotificationChannel` bean; `ReminderService` picks it up without changes. `CachingExchangeRateProvider` is a decorator that adds caching and fallback to any provider. A new billing cycle is a new enum constant. A new sign-in provider is a new `IdentityTokenVerifier`. The password policy is one annotation, `@StrongPassword`, reused wherever a password is accepted. A new rate limit is a new entry in `application.yml`. |
 
 ### API
@@ -279,7 +282,8 @@ Errors always have the same shape:
 - **One monthly figure.** Each subscription keeps its own amount, currency and billing cycle (`BigDecimal`, `numeric(12, 2)`). `BillingCycle` turns any cycle into a monthly cost, and `CurrencyConverter` turns it into the user's default currency, so totals compare like with like.
 - **Charges are projected, not averaged.** The 12-month chart and the calendar come from each subscription's actual renewal dates, so a yearly charge shows up in its month instead of being spread thin.
 - **Exchange rates never block a page.** `CachingExchangeRateProvider` wraps the live provider: rates are cached for 12 hours, a stale value is served if the rate service is down, and a built-in table covers the first start without network.
-- **Reminders are sent once.** The daily job records the renewal it reminded about in `last_reminder_for`, so a restart or a second run the same day sends nothing twice, and a failed send is retried on the next run.
+- **Reminders are sent once.** The daily job records the renewal it reminded about in `last_reminder_for`, so a restart or a second run the same day sends nothing twice. The email is queued in the same transaction, so a mail server that is down delays it instead of losing it.
+- **Email goes through an outbox.** `EmailSender` saves the message in the same transaction as the change that caused it, so nothing is emailed about a change that was rolled back. A dispatcher sends it right after the commit, on background threads, and tries again after 1, 5, 15 and 60 minutes if the mail server is down; after the fifth failed attempt it gives up. Every email has a plain-text version and an HTML version built from the same text.
 - **Time is injected.** Services take a `Clock`, so deadlines, lockouts and cooldowns are tested with a clock the tests can move (`MutableClock`) instead of waiting.
 - **The schema is owned by migrations.** Flyway applies versioned SQL files and Hibernate only validates against them (`ddl-auto: validate`), so the database never changes by surprise.
 - **One origin, no CORS.** nginx serves the React bundle and proxies `/api`, and the Vite dev server does the same, so the refresh cookie can be `SameSite=Strict` and no cross-origin rules exist to get wrong.
@@ -292,13 +296,13 @@ Errors always have the same shape:
 - **Forgotten passwords** are reset with an emailed 6-digit code under the same expiry and attempt limits. A reset signs the account out everywhere.
 - **Lockouts that cannot be used against the owner**: 5 wrong passwords or two-factor codes within 15 minutes lock the account only for the network address they came from, so the owner can still sign in from anywhere else. 30 wrong attempts in a row from any addresses lock it everywhere. Entering the password again does not reset the count for the code step, and a password reset lifts every lock. The answer is `429 ACCOUNT_LOCKED`.
 - **Limits on emailed codes**: 10 attempts per hour for each kind of code (asking for a new code does not reset the count), 5 codes a day per account and 100 an hour for the whole app, so a bot cannot use up the sending limit.
-- **A copy of the database is not enough**: emailed codes and refresh tokens are stored as hashes, and two-factor secrets are encrypted with AES-256-GCM using `ENCRYPTION_KEY`, which never touches the database. Secrets saved before that are encrypted at startup.
+- **A copy of the database is not enough**: emailed codes and refresh tokens are stored as hashes, and two-factor secrets are encrypted with AES-256-GCM using `ENCRYPTION_KEY`, which never touches the database. Secrets saved before that are encrypted at startup. An email waiting in the outbox is encrypted the same way, because it can hold a code, and its text is erased once it is sent.
 - **Nobody can hold on to someone else's email**: a sign-up that was never verified is replaced by a newer one for the same address, and deleted after 48 hours. Names are letters only, so they cannot carry a link.
 - **Security alerts**: an email is sent when the password, the email address (to the old address) or two-factor authentication changes.
 - **Two-factor authentication** is optional and uses an authenticator app (TOTP). A used code cannot be replayed, eight single-use recovery codes cover a lost phone, guesses are limited to 5 per account every 5 minutes, and it applies to Google and Apple sign-ins too.
 - **Sensitive changes** (email, password, turning on two-factor, deleting the account) ask for the current password. A new email only takes effect after a code sent to it is confirmed.
 - **Email verification**: a 6-digit code that expires after 15 minutes, allows 5 wrong attempts, and can be resent once every 60 seconds. An account cannot sign in until it is verified.
-- **No account discovery**: registering an email that already exists, resending a code, and asking for a password reset respond the same way whether or not the account exists, and take about the same time: emails are sent in the background and a request that sends nothing does the same hashing work. Sign-in gives one error for both a wrong password and an unknown email.
+- **No account discovery**: registering an email that already exists, resending a code, and asking for a password reset respond the same way whether or not the account exists, and take about the same time: emails are sent in the background and a request that sends nothing does the same hashing work. The owner of an address that is already registered is told by email instead, once a day at most. Sign-in gives one error for both a wrong password and an unknown email.
 - **Emails to unconfirmed addresses** carry no text chosen by the person who signed up, so the app cannot be used to send someone else a message.
 - **Browser headers**: a Content-Security-Policy that only allows the app's own scripts plus the Google and Apple sign-in SDKs, and `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` and `Strict-Transport-Security` on every response including static assets.
 - **Sessions**: a 15-minute JWT access token held only in browser memory, plus a 14-day refresh token in an `HttpOnly`, `SameSite=Strict` cookie scoped to `/api/auth`. Refresh tokens are stored hashed, are single-use, and are rotated on every refresh. Reusing an old one ends all of that user's sessions. Every access token carries the user's token version: changing or resetting the password, "Sign out of all devices" and deleting the account make every earlier token stop working at once, without a blocklist.

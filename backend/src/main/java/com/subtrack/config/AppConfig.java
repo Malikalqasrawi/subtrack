@@ -27,7 +27,7 @@ public class AppConfig {
 		return new BCryptPasswordEncoder();
 	}
 
-	/** Account emails are handed to this so a request takes the same time whether or not one is sent. */
+	/** Emails go out on these threads, so no request waits for the mail server. */
 	@Bean
 	public TaskExecutor mailExecutor(AppProperties properties) {
 		if (!properties.mail().async()) {

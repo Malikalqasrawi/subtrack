@@ -33,7 +33,7 @@ public record AppProperties(boolean production, @Valid @NotNull Security securit
 	public record Login(@Min(1) int maxAttempts, @Min(1) int accountMaxAttempts, @NotNull Duration lockDuration) {
 	}
 
-	public record Mail(@NotBlank String from, boolean async) {
+	public record Mail(@NotBlank String from, boolean async, boolean jobs, @NotNull Duration keepFor) {
 	}
 
 	public record Reminders(boolean enabled) {
