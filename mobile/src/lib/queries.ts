@@ -8,12 +8,17 @@ const keys = {
   subscriptions: ['subscriptions'] as const,
   insights: ['insights'] as const,
   summary: ['insights', 'summary'] as const,
+  calendar: (year: number, month: number) => ['insights', 'calendar', year, month] as const,
   currencies: ['currencies'] as const,
 };
 
 export const useSubscriptions = () => useQuery({ queryKey: keys.subscriptions, queryFn: subscriptionApi.list });
 
 export const useSummary = () => useQuery({ queryKey: keys.summary, queryFn: insightsApi.summary });
+
+/** @param month 1 to 12 */
+export const useCalendar = (year: number, month: number) =>
+  useQuery({ queryKey: keys.calendar(year, month), queryFn: () => insightsApi.calendar(year, month) });
 
 export const useCurrencies = () => useQuery({ queryKey: keys.currencies, queryFn: currencyApi.list, staleTime: Infinity });
 
