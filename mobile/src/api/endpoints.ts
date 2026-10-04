@@ -1,5 +1,5 @@
 import { api } from '@/api/client';
-import type { AuthResponse, DashboardSummary, Session, Subscription, SubscriptionRequest } from '@/api/types';
+import type { AuthResponse, CalendarMonth, DashboardSummary, Session, Subscription, SubscriptionRequest } from '@/api/types';
 
 const post = <T>(path: string, body?: unknown, auth = true) => api<T>(path, { method: 'POST', body, auth });
 
@@ -31,4 +31,5 @@ export const currencyApi = {
 
 export const insightsApi = {
   summary: () => api<DashboardSummary>('/api/insights/summary'),
+  calendar: (year: number, month: number) => api<CalendarMonth>(`/api/insights/calendar?year=${year}&month=${month}`),
 };
