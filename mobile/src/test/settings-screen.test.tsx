@@ -1,0 +1,194 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, screen, userEvent } from '@testing-library/react-native';
+import { Alert } from 'react-native';
+
+import { ApiError } from '@/api/client';
+import { currencyApi, userApi } from '@/api/endpoints';
+import type { Session } from '@/api/types';
+import SettingsScreen from '@/app/(tabs)/settings';
+import { user } from '@/test/fixtures';
+import { renderScreen } from '@/test/render-screen';
+
+const mockUser = jest.fn();
+const mockSession = { updateUser: jest.fn(), replaceSession: jest.fn(), signOut: jest.fn(), clearSession: jest.fn() };
+
+jest.mock('@/api/endpoints');
+jest.mock('@/session/session-context', () => ({ useCurrentUser: () => mockUser(), useSession: () => mockSession }));
+
+const NEW_PASSWORD = 'Subtrack#2027';
+
+async function renderSettings() {
+  // Without a garbage-collection timer, so nothing is left running when the test ends.
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+  jest.spyOn(client, 'invalidateQueries');
+  await renderScreen(
+    <QueryClientProvider client={client}>
+      <SettingsScreen />
+    </QueryClientProvider>,
+  );
+  return client;
+}
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockUser.mockReturnValue(user({ phoneNumber: '+962791234567' }));
+  jest.mocked(currencyApi.list).mockResolvedValue(['EUR', 'JOD', 'USD']);
+});
+
+describe('profile', () => {
+  it('starts from the account as it is', async () => {
+    await renderSettings();
+
+    expect(screen.getByText('Signed in as demo@subtrack.example')).toBeOnTheScreen();
+    expect(screen.getByLabelText('Name')).toHaveDisplayValue('Demo User');
+    expect(screen.getByLabelText('Phone number')).toHaveDisplayValue('+962791234567');
+    expect(screen.getByLabelText('Default currency: USD')).toBeOnTheScreen();
+  });
+
+  it('saves the new name, a cleaned-up phone number and the chosen currency', async () => {
+    const saved = user({ displayName: 'Malik Demo', phoneNumber: '+962790000000', defaultCurrency: 'JOD' });
+    jest.mocked(userApi.update).mockResolvedValue(saved);
+    const client = await renderSettings();
+
+    await userEvent.clear(screen.getByLabelText('Name'));
+    await userEvent.type(screen.getByLabelText('Name'), ' Malik Demo ');
+    await userEvent.clear(screen.getByLabelText('Phone number'));
+    await userEvent.type(screen.getByLabelText('Phone number'), '+962 79 000-0000');
+    await userEvent.press(screen.getByLabelText('Default currency: USD'));
+    await userEvent.press(await screen.findByRole('radio', { name: 'JOD' }));
+    await userEvent.press(screen.getByRole('button', { name: 'Save profile' }));
+
+    expect(userApi.update).toHaveBeenCalledWith('Malik Demo', '+962790000000', 'JOD');
+    expect(mockSession.updateUser).toHaveBeenCalledWith(saved);
+    expect(client.invalidateQueries).toHaveBeenCalled();
+    expect(screen.getByText('Profile saved')).toBeOnTheScreen();
+  });
+
+  it('stops a phone number without a country code before calling the API', async () => {
+    await renderSettings();
+
+    await userEvent.clear(screen.getByLabelText('Phone number'));
+    await userEvent.type(screen.getByLabelText('Phone number'), '0791234567');
+    await userEvent.press(screen.getByRole('button', { name: 'Save profile' }));
+
+    expect(screen.getByText('Use international format, for example +962791234567')).toBeOnTheScreen();
+    expect(userApi.update).not.toHaveBeenCalled();
+  });
+
+  it('shows the errors the API sends back and keeps the old profile', async () => {
+    jest.mocked(userApi.update).mockRejectedValue(
+      new ApiError(400, 'VALIDATION', 'Check the form', { displayName: 'can only contain letters, spaces, apostrophes and hyphens' }),
+    );
+    await renderSettings();
+
+    await userEvent.press(screen.getByRole('button', { name: 'Save profile' }));
+
+    expect(await screen.findByText('can only contain letters, spaces, apostrophes and hyphens')).toBeOnTheScreen();
+    expect(mockSession.updateUser).not.toHaveBeenCalled();
+    expect(screen.queryByText('Profile saved')).not.toBeOnTheScreen();
+  });
+});
+
+describe('password', () => {
+  const session: Session = { accessToken: 'access-2', expiresInSeconds: 900, user: user(), refreshToken: 'refresh-2' };
+
+  it('changes the password and keeps the session the server hands back', async () => {
+    jest.mocked(userApi.changePassword).mockResolvedValue(session);
+    await renderSettings();
+
+    await userEvent.type(screen.getByLabelText('Current password'), 'Subtrack#2026');
+    await userEvent.type(screen.getByLabelText('New password'), NEW_PASSWORD);
+    await userEvent.press(screen.getByRole('button', { name: 'Change password' }));
+
+    expect(userApi.changePassword).toHaveBeenCalledWith('Subtrack#2026', NEW_PASSWORD);
+    expect(mockSession.replaceSession).toHaveBeenCalledWith(session);
+    expect(await screen.findByText('Password changed')).toBeOnTheScreen();
+    expect(screen.getByLabelText('Current password')).toHaveDisplayValue('');
+    expect(screen.getByLabelText('New password')).toHaveDisplayValue('');
+  });
+
+  it('says when the current password is wrong and keeps the session', async () => {
+    jest.mocked(userApi.changePassword).mockRejectedValue(new ApiError(403, 'WRONG_PASSWORD', 'Your current password is incorrect'));
+    await renderSettings();
+
+    await userEvent.type(screen.getByLabelText('Current password'), 'not-my-password');
+    await userEvent.type(screen.getByLabelText('New password'), NEW_PASSWORD);
+    await userEvent.press(screen.getByRole('button', { name: 'Change password' }));
+
+    expect(await screen.findByText('Your current password is incorrect')).toBeOnTheScreen();
+    expect(mockSession.replaceSession).not.toHaveBeenCalled();
+  });
+
+  it('keeps the button off until the current password is typed and the new one is strong', async () => {
+    await renderSettings();
+    const button = () => screen.getByRole('button', { name: 'Change password' });
+
+    await userEvent.type(screen.getByLabelText('New password'), NEW_PASSWORD);
+    expect(button()).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText('Current password'), 'Subtrack#2026');
+    expect(button()).toBeEnabled();
+
+    await userEvent.clear(screen.getByLabelText('New password'));
+    await userEvent.type(screen.getByLabelText('New password'), 'weakpass');
+    expect(button()).toBeDisabled();
+  });
+
+  it('lets an account that signed up with Google set its first password', async () => {
+    mockUser.mockReturnValue(user({ hasPassword: false }));
+    jest.mocked(userApi.changePassword).mockResolvedValue(session);
+    await renderSettings();
+
+    expect(screen.getByRole('header', { name: 'Set a password' })).toBeOnTheScreen();
+    expect(screen.queryByLabelText('Current password')).not.toBeOnTheScreen();
+
+    await userEvent.type(screen.getByLabelText('New password'), NEW_PASSWORD);
+    await userEvent.press(screen.getByRole('button', { name: 'Set password' }));
+
+    expect(userApi.changePassword).toHaveBeenCalledWith('', NEW_PASSWORD);
+    expect(await screen.findByText('Password set')).toBeOnTheScreen();
+  });
+});
+
+describe('sessions', () => {
+  it('signs out of this device', async () => {
+    await renderSettings();
+
+    await userEvent.press(screen.getByRole('button', { name: 'Sign out' }));
+
+    expect(mockSession.signOut).toHaveBeenCalled();
+    expect(userApi.logoutEverywhere).not.toHaveBeenCalled();
+  });
+
+  it('signs out everywhere only after the confirmation is accepted', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    jest.mocked(userApi.logoutEverywhere).mockResolvedValue(undefined);
+    await renderSettings();
+
+    await userEvent.press(screen.getByRole('button', { name: 'Sign out of all devices' }));
+
+    expect(alert).toHaveBeenCalledWith('Sign out of all devices?', expect.any(String), expect.any(Array));
+    expect(userApi.logoutEverywhere).not.toHaveBeenCalled();
+
+    const buttons = alert.mock.calls[0][2] ?? [];
+    await act(async () => buttons.find((button) => button.style === 'destructive')?.onPress?.());
+
+    expect(userApi.logoutEverywhere).toHaveBeenCalled();
+    expect(mockSession.clearSession).toHaveBeenCalled();
+    expect(mockSession.signOut).not.toHaveBeenCalled();
+  });
+
+  it('stays signed in when signing out everywhere fails', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    jest.mocked(userApi.logoutEverywhere).mockRejectedValue(new ApiError(0, 'NETWORK', 'Could not reach the server. Check your connection and try again.'));
+    await renderSettings();
+
+    await userEvent.press(screen.getByRole('button', { name: 'Sign out of all devices' }));
+    const buttons = alert.mock.calls[0][2] ?? [];
+    await act(async () => buttons.find((button) => button.style === 'destructive')?.onPress?.());
+
+    expect(await screen.findByText('Could not reach the server. Check your connection and try again.')).toBeOnTheScreen();
+    expect(mockSession.clearSession).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeEnabled();
+  });
+});

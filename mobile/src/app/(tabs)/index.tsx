@@ -1,5 +1,4 @@
-import { Feather } from '@expo/vector-icons';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { CategorySpend, DashboardSummary, RenewalEntry } from '@/api/types';
@@ -10,28 +9,22 @@ import { Fonts, Hero, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { categoryLabel, daysUntil, formatDate, formatMoney, relativeDay } from '@/lib/format';
 import { useSummary } from '@/lib/queries';
-import { useCurrentUser, useSession } from '@/session/session-context';
+import { useCurrentUser } from '@/session/session-context';
 
 const UPCOMING_WINDOW_DAYS = 30;
 
 export default function DashboardScreen() {
   const user = useCurrentUser();
-  const { signOut } = useSession();
   const theme = useTheme();
   const { data: summary, error, refetch, isRefetching } = useSummary();
 
   return (
     <SafeAreaView edges={['top']} style={[styles.screen, { backgroundColor: theme.background }]}>
       <View style={styles.header}>
-        <View style={styles.headerText}>
-          <Text style={[styles.greeting, { color: theme.text }]}>
-            {greetingFor(new Date().getHours())}, {user.displayName.split(' ')[0]}
-          </Text>
-          <Text style={{ color: theme.textSecondary }}>Here&apos;s where your money goes.</Text>
-        </View>
-        <Pressable accessibilityRole="button" accessibilityLabel="Sign out" hitSlop={12} onPress={signOut}>
-          <Feather name="log-out" size={22} color={theme.textMuted} />
-        </Pressable>
+        <Text style={[styles.greeting, { color: theme.text }]}>
+          {greetingFor(new Date().getHours())}, {user.displayName.split(' ')[0]}
+        </Text>
+        <Text style={{ color: theme.textSecondary }}>Here&apos;s where your money goes.</Text>
       </View>
 
       {!summary && !error && <Loading />}
@@ -152,14 +145,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
-  },
-  headerText: {
-    flex: 1,
     gap: Spacing.half,
   },
   greeting: {

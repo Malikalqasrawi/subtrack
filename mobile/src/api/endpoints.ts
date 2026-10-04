@@ -1,5 +1,13 @@
 import { api } from '@/api/client';
-import type { AuthResponse, CalendarMonth, DashboardSummary, Session, Subscription, SubscriptionRequest } from '@/api/types';
+import type {
+  AuthResponse,
+  CalendarMonth,
+  DashboardSummary,
+  Session,
+  Subscription,
+  SubscriptionRequest,
+  User,
+} from '@/api/types';
 
 const post = <T>(path: string, body?: unknown, auth = true) => api<T>(path, { method: 'POST', body, auth });
 
@@ -15,6 +23,14 @@ export const authApi = {
     post<void>('/api/auth/reset-password', { email, code, newPassword }, false),
   twoFactor: (challengeToken: string, code: string) => post<Session>('/api/auth/2fa', { challengeToken, code }, false),
   logout: (refreshToken: string) => post<void>('/api/auth/logout', { refreshToken }, false),
+};
+
+export const userApi = {
+  update: (displayName: string, phoneNumber: string, defaultCurrency: string) =>
+    api<User>('/api/users/me', { method: 'PUT', body: { displayName, phoneNumber, defaultCurrency } }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    post<Session>('/api/users/me/password', { currentPassword, newPassword }),
+  logoutEverywhere: () => post<void>('/api/users/me/logout-all'),
 };
 
 export const subscriptionApi = {

@@ -13,10 +13,11 @@ interface Props<T> {
   value: T;
   onChange: (value: T) => void;
   error?: string;
+  hint?: string;
 }
 
 /** A field that opens a sheet with the options, for lists too long to show as chips. */
-export function SelectField<T extends string | number | null>({ label, options, value, onChange, error }: Props<T>) {
+export function SelectField<T extends string | number | null>({ label, options, value, onChange, error, hint }: Props<T>) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
@@ -28,7 +29,7 @@ export function SelectField<T extends string | number | null>({ label, options, 
   }
 
   return (
-    <Field label={label} error={error}>
+    <Field label={label} error={error} hint={hint}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${label}: ${selected?.label ?? value}`}
