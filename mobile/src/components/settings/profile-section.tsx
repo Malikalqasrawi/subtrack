@@ -50,7 +50,7 @@ export function ProfileSection() {
   }
 
   return (
-    <SettingsSection title="Profile" note={`Signed in as ${user.email}`}>
+    <SettingsSection title="Profile">
       <TextField
         label="Name"
         value={displayName}

@@ -6,6 +6,7 @@ import type {
   Session,
   Subscription,
   SubscriptionRequest,
+  TwoFactorSetup,
   User,
 } from '@/api/types';
 
@@ -30,7 +31,17 @@ export const userApi = {
     api<User>('/api/users/me', { method: 'PUT', body: { displayName, phoneNumber, defaultCurrency } }),
   changePassword: (currentPassword: string, newPassword: string) =>
     post<Session>('/api/users/me/password', { currentPassword, newPassword }),
+  requestEmailChange: (newEmail: string, currentPassword: string) =>
+    post<void>('/api/users/me/email', { newEmail, currentPassword }),
+  confirmEmailChange: (code: string) => post<User>('/api/users/me/email/confirm', { code }),
   logoutEverywhere: () => post<void>('/api/users/me/logout-all'),
+  deleteAccount: (currentPassword: string) => api<void>('/api/users/me', { method: 'DELETE', body: { currentPassword } }),
+};
+
+export const twoFactorApi = {
+  setup: (currentPassword: string) => post<TwoFactorSetup>('/api/users/me/2fa/setup', { currentPassword }),
+  enable: (code: string) => post<{ recoveryCodes: string[] }>('/api/users/me/2fa/enable', { code }),
+  disable: (code: string) => post<void>('/api/users/me/2fa/disable', { code }),
 };
 
 export const subscriptionApi = {

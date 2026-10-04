@@ -4,7 +4,7 @@ import { Alert } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ApiError } from '@/api/client';
-import { currencyApi, subscriptionApi } from '@/api/endpoints';
+import { subscriptionApi } from '@/api/endpoints';
 import type { Subscription } from '@/api/types';
 import { SubscriptionForm } from '@/components/subscription-form';
 import { subscription } from '@/test/fixtures';
@@ -22,6 +22,8 @@ const SCREEN = { frame: { x: 0, y: 0, width: 390, height: 844 }, insets: { top: 
 async function renderForm(existing?: Subscription) {
   // Without a garbage-collection timer, so nothing is left running when the test ends.
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { gcTime: Infinity } } });
+  // The currency list is already loaded, so nothing is still arriving while a test runs.
+  client.setQueryData(['currencies'], ['USD', 'JOD']);
   await render(
     <SafeAreaProvider initialMetrics={SCREEN}>
       <QueryClientProvider client={client}>
@@ -33,7 +35,6 @@ async function renderForm(existing?: Subscription) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.mocked(currencyApi.list).mockResolvedValue(['USD', 'JOD']);
   jest.mocked(subscriptionApi.list).mockResolvedValue([]);
 });
 
