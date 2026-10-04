@@ -126,7 +126,7 @@ Because of that proxy the browser sees a single origin, exactly as it does behin
 
 ```bash
 cd backend && ./mvnw test
-cd frontend && npm run build && npm run lint
+cd frontend && npm run lint && npm test && npm run build
 ```
 
 Backend tests run against an in-memory H2 database in PostgreSQL mode, so they need no Docker. They cover sign-up and verification, the password rules, password reset, two-factor sign-in (including the RFC 6238 test vectors), email and password changes, account deletion, Google/Apple account linking, token rotation, per-user data isolation, the insight calculations, reminders, billing-date arithmetic, rate limiting and the exchange-rate cache.
