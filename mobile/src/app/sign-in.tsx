@@ -1,18 +1,26 @@
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, Text, View } from 'react-native';
 
+import { ApiError } from '@/api/client';
 import { authApi } from '@/api/endpoints';
 import type { AuthResponse } from '@/api/types';
+import { AuthScreen } from '@/components/auth-screen';
+import { Banner } from '@/components/banner';
 import { Button } from '@/components/button';
+import { PasswordField } from '@/components/password-field';
 import { TextField } from '@/components/text-field';
-import { Radius, Spacing } from '@/constants/theme';
+import { TextLink } from '@/components/text-link';
+import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { pendingVerification } from '@/session/pending-verification';
 import { useSession } from '@/session/session-context';
 
 export default function SignInScreen() {
   const { signIn } = useSession();
   const theme = useTheme();
+  const router = useRouter();
+  const { passwordChanged } = useLocalSearchParams<{ passwordChanged?: string }>();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [challengeToken, setChallengeToken] = useState<string>();
@@ -38,129 +46,95 @@ export default function SignInScreen() {
     }
   }
 
-  const submitPassword = () => submit(async () => onResult(await authApi.login(email.trim(), password)), 'Could not sign in');
+  const submitPassword = () =>
+    submit(async () => {
+      const address = email.trim();
+      try {
+        await onResult(await authApi.login(address, password));
+      } catch (err) {
+        if (!(err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED')) throw err;
+        // The password was right, so carry it along: verifying needs it too.
+        await authApi.resendVerification(address).catch(() => {});
+        pendingVerification.set({ email: address, password });
+        router.push('/verify-email');
+      }
+    }, 'Could not sign in');
 
   const submitCode = () =>
     submit(async () => {
       if (challengeToken) await signIn(await authApi.twoFactor(challengeToken, code.trim()));
     }, 'Could not check the code');
 
-  const secondStep = challengeToken !== undefined;
+  if (challengeToken !== undefined) {
+    return (
+      <AuthScreen
+        title="Two-factor check"
+        subtitle="Enter the 6-digit code from your authenticator app, or one of your recovery codes.">
+        <TextField
+          label="Code"
+          value={code}
+          onChangeText={setCode}
+          placeholder="123456"
+          autoCapitalize="characters"
+          autoComplete="one-time-code"
+          autoCorrect={false}
+          maxLength={20}
+          autoFocus
+          onSubmitEditing={submitCode}
+        />
+        {error && <Banner message={error} />}
+        <Button label="Continue" onPress={submitCode} busy={submitting} disabled={code.trim().length < 6} />
+        <Button
+          label="Back to sign in"
+          variant="ghost"
+          onPress={() => {
+            setChallengeToken(undefined);
+            setCode('');
+            setError(undefined);
+          }}
+        />
+      </AuthScreen>
+    );
+  }
 
   return (
-    <SafeAreaView style={[styles.screen, { backgroundColor: theme.background }]}>
-      <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <Text style={[styles.brand, { color: theme.accent }]}>Subtrack</Text>
-          <Text style={[styles.title, { color: theme.text }]}>{secondStep ? 'Two-factor check' : 'Welcome back'}</Text>
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-            {secondStep
-              ? 'Enter the 6-digit code from your authenticator app, or one of your recovery codes.'
-              : 'Sign in to see what renews next.'}
-          </Text>
-
-          <View style={styles.form}>
-            {secondStep ? (
-              <TextField
-                label="Code"
-                value={code}
-                onChangeText={setCode}
-                placeholder="123456"
-                autoCapitalize="characters"
-                autoComplete="one-time-code"
-                autoCorrect={false}
-                maxLength={20}
-                autoFocus
-                onSubmitEditing={submitCode}
-              />
-            ) : (
-              <>
-                <TextField
-                  label="Email"
-                  value={email}
-                  onChangeText={setEmail}
-                  autoCapitalize="none"
-                  autoComplete="email"
-                  autoCorrect={false}
-                  keyboardType="email-address"
-                  textContentType="emailAddress"
-                />
-                <TextField
-                  label="Password"
-                  value={password}
-                  onChangeText={setPassword}
-                  autoCapitalize="none"
-                  autoComplete="current-password"
-                  secureTextEntry
-                  textContentType="password"
-                  maxLength={72}
-                  onSubmitEditing={submitPassword}
-                />
-              </>
-            )}
-
-            {error && (
-              <Text accessibilityRole="alert" style={[styles.error, { color: theme.danger, backgroundColor: theme.dangerSoft }]}>
-                {error}
-              </Text>
-            )}
-
-            {secondStep ? (
-              <>
-                <Button label="Continue" onPress={submitCode} busy={submitting} disabled={code.trim().length < 6} />
-                <Button
-                  label="Back to sign in"
-                  variant="ghost"
-                  onPress={() => {
-                    setChallengeToken(undefined);
-                    setCode('');
-                    setError(undefined);
-                  }}
-                />
-              </>
-            ) : (
-              <Button label="Sign in" onPress={submitPassword} busy={submitting} disabled={email.trim() === '' || password === ''} />
-            )}
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+    <AuthScreen title="Welcome back" subtitle="Sign in to see what renews next.">
+      {passwordChanged && !error && <Banner tone="success" message="Password changed. Sign in with your new password." />}
+      <TextField
+        label="Email"
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+        autoComplete="email"
+        autoCorrect={false}
+        keyboardType="email-address"
+        textContentType="emailAddress"
+      />
+      <PasswordField label="Password" value={password} onChange={setPassword} autoComplete="current-password" onSubmit={submitPassword} />
+      <View style={styles.forgot}>
+        <TextLink
+          label="Forgot password?"
+          onPress={() => router.push({ pathname: '/forgot-password', params: { email: email.trim() } })}
+        />
+      </View>
+      {error && <Banner message={error} />}
+      <Button label="Sign in" onPress={submitPassword} busy={submitting} disabled={email.trim() === '' || password === ''} />
+      <View style={styles.switch}>
+        <Text style={{ color: theme.textSecondary }}>New here?</Text>
+        <TextLink label="Create an account" onPress={() => router.push('/register')} />
+      </View>
+    </AuthScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
+  forgot: {
+    alignItems: 'flex-end',
   },
-  content: {
-    flexGrow: 1,
+  switch: {
+    flexDirection: 'row',
     justifyContent: 'center',
-    padding: Spacing.four,
+    alignItems: 'center',
     gap: Spacing.two,
-  },
-  brand: {
-    fontSize: 20,
-    fontWeight: '800',
-    marginBottom: Spacing.three,
-  },
-  title: {
-    fontSize: 30,
-    fontWeight: '700',
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 16,
-    lineHeight: 22,
-  },
-  form: {
-    gap: Spacing.three,
-    marginTop: Spacing.four,
-  },
-  error: {
-    fontSize: 14,
-    lineHeight: 20,
-    padding: Spacing.three,
-    borderRadius: Radius.small,
-    overflow: 'hidden',
   },
 });

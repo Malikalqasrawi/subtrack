@@ -51,6 +51,9 @@ function Navigation() {
         </Stack.Protected>
         <Stack.Protected guard={user === null}>
           <Stack.Screen name="sign-in" />
+          <Stack.Screen name="register" />
+          <Stack.Screen name="verify-email" />
+          <Stack.Screen name="forgot-password" />
         </Stack.Protected>
       </Stack>
     </ThemeProvider>

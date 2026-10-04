@@ -5,6 +5,14 @@ const post = <T>(path: string, body?: unknown, auth = true) => api<T>(path, { me
 
 export const authApi = {
   login: (email: string, password: string) => post<AuthResponse>('/api/auth/login', { email, password }, false),
+  register: (email: string, password: string, displayName: string, phoneNumber: string) =>
+    post<void>('/api/auth/register', { email, password, displayName, phoneNumber }, false),
+  verify: (email: string, password: string, code: string) =>
+    post<Session>('/api/auth/verify', { email, password, code }, false),
+  resendVerification: (email: string) => post<void>('/api/auth/resend-verification', { email }, false),
+  forgotPassword: (email: string) => post<void>('/api/auth/forgot-password', { email }, false),
+  resetPassword: (email: string, code: string, newPassword: string) =>
+    post<void>('/api/auth/reset-password', { email, code, newPassword }, false),
   twoFactor: (challengeToken: string, code: string) => post<Session>('/api/auth/2fa', { challengeToken, code }, false),
   logout: (refreshToken: string) => post<void>('/api/auth/logout', { refreshToken }, false),
 };
