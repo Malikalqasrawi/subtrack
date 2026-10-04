@@ -184,6 +184,48 @@ class ApiIntegrationTest {
 	}
 
 	@Test
+	void theMobileAppGetsItsRefreshTokenInTheAnswerInsteadOfACookie() throws Exception {
+		String email = newEmail();
+		signUp(email);
+		MvcResult signedIn = mvc
+			.perform(json(post("/api/auth/login"), credentials(email, PASSWORD)).header("X-Subtrack-Client", "app"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.refreshToken").isNotEmpty())
+			.andReturn();
+		assertThat(signedIn.getResponse().getCookie("refresh_token")).isNull();
+		String first = JsonPath.read(signedIn.getResponse().getContentAsString(), "$.refreshToken");
+
+		MvcResult refreshed = mvc.perform(json(post("/api/auth/refresh"), refreshToken(first)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.accessToken").isNotEmpty())
+			.andReturn();
+		assertThat(refreshed.getResponse().getCookie("refresh_token")).isNull();
+		String second = JsonPath.read(refreshed.getResponse().getContentAsString(), "$.refreshToken");
+		assertThat(second).isNotEqualTo(first);
+
+		mvc.perform(json(post("/api/auth/logout"), refreshToken(second))).andExpect(status().isNoContent());
+		mvc.perform(json(post("/api/auth/refresh"), refreshToken(second))).andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void aBrowserNeverGetsItsRefreshTokenInTheAnswer() throws Exception {
+		String email = newEmail();
+		signUp(email);
+		MvcResult signedIn = mvc.perform(json(post("/api/auth/login"), credentials(email, PASSWORD)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.refreshToken").doesNotExist())
+			.andReturn();
+		Cookie cookie = signedIn.getResponse().getCookie("refresh_token");
+
+		// Even a page script that claims to be the app cannot turn the cookie into a readable token.
+		MvcResult refreshed = mvc.perform(post("/api/auth/refresh").cookie(cookie).header("X-Subtrack-Client", "app"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.refreshToken").doesNotExist())
+			.andReturn();
+		assertThat(refreshed.getResponse().getCookie("refresh_token")).isNotNull();
+	}
+
+	@Test
 	void logoutRevokesTheRefreshToken() throws Exception {
 		String email = newEmail();
 		register(email, PASSWORD);
@@ -652,6 +694,10 @@ class ApiIntegrationTest {
 			request.setRemoteAddr(address);
 			return request;
 		};
+	}
+
+	private static String refreshToken(String token) {
+		return "{\"refreshToken\": \"%s\"}".formatted(token);
 	}
 
 	private static String currentPassword(String password) {

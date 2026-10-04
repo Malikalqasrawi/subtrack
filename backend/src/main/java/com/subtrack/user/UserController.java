@@ -4,7 +4,7 @@ import com.subtrack.auth.AuthSession;
 import com.subtrack.auth.AuthenticatedUser;
 import com.subtrack.auth.dto.AuthResponse;
 import com.subtrack.auth.session.RefreshCookieFactory;
-import com.subtrack.auth.token.AccessTokenService;
+import com.subtrack.auth.session.SessionResponses;
 import com.subtrack.user.dto.ChangeEmailRequest;
 import com.subtrack.user.dto.ChangePasswordRequest;
 import com.subtrack.user.dto.ConfirmEmailChangeRequest;
@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -31,15 +32,15 @@ public class UserController {
 
 	private final AccountService accountService;
 
-	private final AccessTokenService accessTokens;
+	private final SessionResponses sessionResponses;
 
 	private final RefreshCookieFactory refreshCookies;
 
-	public UserController(UserService userService, AccountService accountService, AccessTokenService accessTokens,
+	public UserController(UserService userService, AccountService accountService, SessionResponses sessionResponses,
 			RefreshCookieFactory refreshCookies) {
 		this.userService = userService;
 		this.accountService = accountService;
-		this.accessTokens = accessTokens;
+		this.sessionResponses = sessionResponses;
 		this.refreshCookies = refreshCookies;
 	}
 
@@ -56,14 +57,11 @@ public class UserController {
 
 	@PostMapping("/password")
 	public ResponseEntity<AuthResponse> changePassword(@AuthenticationPrincipal AuthenticatedUser me,
-			@Valid @RequestBody ChangePasswordRequest request) {
+			@Valid @RequestBody ChangePasswordRequest request,
+			@RequestHeader(name = SessionResponses.CLIENT_HEADER, required = false) String client) {
 		AuthSession session = accountService.changePassword(me.id(), request.currentPassword(),
 				request.newPassword());
-		AuthResponse body = AuthResponse.signedIn(session.accessToken(), accessTokens.timeToLive().toSeconds(),
-				UserResponse.from(session.user()));
-		return ResponseEntity.ok()
-			.header(HttpHeaders.SET_COOKIE, refreshCookies.create(session.refreshToken()).toString())
-			.body(body);
+		return sessionResponses.respond(session, client);
 	}
 
 	@PostMapping("/logout-all")
