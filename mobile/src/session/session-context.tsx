@@ -10,7 +10,13 @@ interface SessionState {
   /** `undefined` while the saved session is still being restored. */
   user: User | null | undefined;
   signIn: (session: Session) => Promise<void>;
+  /** Ends this device's session on the server, then forgets it here. */
   signOut: () => Promise<void>;
+  /** Forgets the session on this device only, for when the server has already ended it. */
+  clearSession: () => Promise<void>;
+  /** Swaps in the tokens the server issues after a password change. The loaded data stays. */
+  replaceSession: (session: Session) => Promise<void>;
+  updateUser: (user: User) => void;
 }
 
 const SessionContext = createContext<SessionState | null>(null);
@@ -36,16 +42,29 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setUser(session.user);
   }, []);
 
-  const signOut = useCallback(async () => {
-    const refreshToken = await sessionStorage.read();
-    if (refreshToken) await authApi.logout(refreshToken).catch(() => {});
+  const clearSession = useCallback(async () => {
     await sessionStorage.clear();
     queryClient.clear();
     setAccessToken(null);
     setUser(null);
   }, []);
 
-  const value = useMemo(() => ({ user, signIn, signOut }), [user, signIn, signOut]);
+  const signOut = useCallback(async () => {
+    const refreshToken = await sessionStorage.read();
+    if (refreshToken) await authApi.logout(refreshToken).catch(() => {});
+    await clearSession();
+  }, [clearSession]);
+
+  const replaceSession = useCallback(async (session: Session) => {
+    setAccessToken(session.accessToken);
+    await sessionStorage.write(session.refreshToken);
+    setUser(session.user);
+  }, []);
+
+  const value = useMemo(
+    () => ({ user, signIn, signOut, clearSession, replaceSession, updateUser: setUser }),
+    [user, signIn, signOut, clearSession, replaceSession],
+  );
   return <SessionContext value={value}>{children}</SessionContext>;
 }
 

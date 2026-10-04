@@ -3,12 +3,12 @@ import { StyleSheet, Text } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-interface Props {
+export interface BannerProps {
   message: string;
   tone?: 'error' | 'success';
 }
 
-export function Banner({ message, tone = 'error' }: Props) {
+export function Banner({ message, tone = 'error' }: BannerProps) {
   const theme = useTheme();
   const colors =
     tone === 'error'
