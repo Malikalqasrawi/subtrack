@@ -2,6 +2,7 @@ import DangerZone from '../components/settings/DangerZone'
 import EmailSection from '../components/settings/EmailSection'
 import PasswordSection from '../components/settings/PasswordSection'
 import ProfileSection from '../components/settings/ProfileSection'
+import SessionsSection from '../components/settings/SessionsSection'
 import TwoFactorSection from '../components/settings/TwoFactorSection'
 
 export default function SettingsPage() {
@@ -22,6 +23,7 @@ export default function SettingsPage() {
         <div className="stagger">
           <TwoFactorSection />
           <PasswordSection />
+          <SessionsSection />
         </div>
       </div>
     </>

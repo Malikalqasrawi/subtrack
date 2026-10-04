@@ -32,6 +32,11 @@ management:
         include: health
 
 app:
+  # true on a real server: the app then refuses to start with settings that are only safe on a laptop.
+  production: ${PRODUCTION:false}
+  security:
+    # Encrypts two-factor secrets in the database. No default on purpose.
+    encryption-key: ${ENCRYPTION_KEY:}
   jwt:
     # No default on purpose: the app refuses to start without a real secret.
     secret: ${JWT_SECRET:}
@@ -43,11 +48,17 @@ app:
     resend-cooldown: 60s
     # Per account, across every code issued in that hour.
     attempts-per-hour: 10
-    codes-per-hour: 5
+    # Emails cost sending reputation, so codes are capped per account and for the whole app.
+    codes-per-day: 5
+    global-codes-per-hour: 100
+    # A sign-up that was never verified is deleted after this long.
+    unverified-account-ttl: 48h
   login:
-    # Per account, whatever IP the attempts come from.
-    attempts-per-account: 10
-    window: 15m
+    # Wrong passwords or two-factor codes from one address lock the account for that address only.
+    max-attempts: 5
+    lock-duration: 15m
+    # Wrong attempts in a row from any addresses lock it everywhere.
+    account-max-attempts: 30
   mail:
     # smtp = send real email, log = print emails to the console
     mode: ${MAIL_MODE:smtp}

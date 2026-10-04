@@ -4,6 +4,7 @@ import com.subtrack.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import java.time.Instant;
 
 @Entity
 @Table(name = "users")
@@ -31,7 +32,8 @@ public class User extends BaseEntity {
 	@Column(nullable = false)
 	private boolean hasPassword = true;
 
-	@Column(length = 64)
+	/** Encrypted, see SecretBox. */
+	@Column(length = 255)
 	private String totpSecret;
 
 	@Column(nullable = false)
@@ -39,6 +41,16 @@ public class User extends BaseEntity {
 
 	/** The time step of the last accepted authenticator code, so a code cannot be used twice. */
 	private Long totpLastStep;
+
+	/** Carried by every access token; raising it ends all of them at once. */
+	@Column(nullable = false)
+	private int tokenVersion;
+
+	/** Wrong sign-in attempts in a row, from any address. */
+	@Column(nullable = false)
+	private int failedLogins;
+
+	private Instant loginLockedUntil;
 
 	protected User() {
 	}
@@ -100,13 +112,60 @@ public class User extends BaseEntity {
 		this.defaultCurrency = defaultCurrency;
 	}
 
+	/** A new password ends every session and lifts any sign-in lock. */
 	public void changePassword(String passwordHash) {
 		this.passwordHash = passwordHash;
 		this.hasPassword = true;
+		endAllSessions();
+		recordSuccessfulLogin();
+	}
+
+	public void endAllSessions() {
+		this.tokenVersion++;
+	}
+
+	/**
+	 * Counts a wrong password or code towards the account-wide lock.
+	 * @return true if this attempt locked the account
+	 */
+	public boolean recordFailedLogin(int maxAttempts, Instant lockUntil) {
+		failedLogins++;
+		if (failedLogins < maxAttempts) {
+			return false;
+		}
+		failedLogins = 0;
+		loginLockedUntil = lockUntil;
+		return true;
+	}
+
+	public void recordSuccessfulLogin() {
+		failedLogins = 0;
+		loginLockedUntil = null;
+	}
+
+	public boolean hasFailedLogins() {
+		return failedLogins > 0 || loginLockedUntil != null;
+	}
+
+	public boolean isLoginLocked(Instant now) {
+		return loginLockedUntil != null && now.isBefore(loginLockedUntil);
+	}
+
+	public Instant getLoginLockedUntil() {
+		return loginLockedUntil;
+	}
+
+	public int getTokenVersion() {
+		return tokenVersion;
 	}
 
 	public void changeEmail(String email) {
 		this.email = normalizeEmail(email);
+	}
+
+	/** For secrets saved before they were encrypted. */
+	public void replaceTotpSecret(String sealedSecret) {
+		this.totpSecret = sealedSecret;
 	}
 
 	/** Stores a new authenticator secret; two-factor stays off until a code confirms it. */

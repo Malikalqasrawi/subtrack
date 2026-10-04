@@ -3,10 +3,12 @@ package com.subtrack.auth.twofactor;
 import com.subtrack.auth.alert.SecurityAlert;
 import com.subtrack.auth.alert.SecurityAlertMailer;
 import com.subtrack.auth.twofactor.dto.TwoFactorSetupResponse;
+import com.subtrack.common.SecretBox;
 import com.subtrack.common.Sha256;
 import com.subtrack.common.error.BadRequestException;
 import com.subtrack.common.error.ConflictException;
 import com.subtrack.user.User;
+import com.subtrack.user.UserRepository;
 import com.subtrack.user.UserService;
 import java.security.SecureRandom;
 import java.time.Clock;
@@ -35,10 +37,16 @@ public class TwoFactorService {
 
 	private final SecurityAlertMailer alerts;
 
+	private final SecretBox secretBox;
+
+	private final UserRepository users;
+
 	private final SecureRandom random = new SecureRandom();
 
 	public TwoFactorService(UserService userService, RecoveryCodeRepository recoveryCodes, TotpAuthenticator totp,
-			Clock clock, SecurityAlertMailer alerts) {
+			Clock clock, SecurityAlertMailer alerts, SecretBox secretBox, UserRepository users) {
+		this.secretBox = secretBox;
+		this.users = users;
 		this.userService = userService;
 		this.recoveryCodes = recoveryCodes;
 		this.totp = totp;
@@ -54,7 +62,7 @@ public class TwoFactorService {
 			throw new ConflictException("TWO_FACTOR_ALREADY_ON", "Two-factor authentication is already on");
 		}
 		String secret = totp.generateSecret();
-		user.beginTotpSetup(secret);
+		user.beginTotpSetup(secretBox.seal(secret));
 		return new TwoFactorSetupResponse(secret, totp.provisioningUri(secret, user.getEmail()));
 	}
 
@@ -68,7 +76,7 @@ public class TwoFactorService {
 		if (user.getTotpSecret() == null) {
 			throw new BadRequestException("TWO_FACTOR_NOT_STARTED", "Start two-factor setup first");
 		}
-		OptionalLong step = totp.matchingStep(user.getTotpSecret(), code.trim());
+		OptionalLong step = totp.matchingStep(secretBox.open(user.getTotpSecret()), code.trim());
 		if (step.isEmpty()) {
 			throw invalidCode();
 		}
@@ -109,10 +117,18 @@ public class TwoFactorService {
 		return user.isTotpEnabled() && accepts(user, code);
 	}
 
+	/** Encrypts secrets saved before they were encrypted. Returns how many accounts were changed. */
+	@Transactional
+	public int encryptStoredSecrets() {
+		List<User> plain = users.findWithUnencryptedTotpSecret();
+		plain.forEach(user -> user.replaceTotpSecret(secretBox.seal(user.getTotpSecret())));
+		return plain.size();
+	}
+
 	private boolean accepts(User user, String code) {
 		String trimmed = code.trim();
 		if (trimmed.matches("\\d{6}")) {
-			OptionalLong step = totp.matchingStep(user.getTotpSecret(), trimmed);
+			OptionalLong step = totp.matchingStep(secretBox.open(user.getTotpSecret()), trimmed);
 			// A code that was already used is refused, so one seen over the shoulder cannot be replayed.
 			return step.isPresent() && user.acceptTotpStep(step.getAsLong());
 		}

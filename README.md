@@ -48,8 +48,10 @@ You need Docker with the Compose plugin.
 
 ```bash
 cp .env.example .env
-# Edit .env: set DB_PASSWORD, and set JWT_SECRET to the output of:
+# Edit .env: set DB_PASSWORD, set JWT_SECRET to the output of:
 openssl rand -base64 48
+# and ENCRYPTION_KEY to the output of:
+openssl rand -base64 32
 
 docker compose up --build
 ```
@@ -136,6 +138,8 @@ All settings are environment variables read by the backend. Defaults live in `ba
 | Variable | Default | Purpose |
 |---|---|---|
 | `JWT_SECRET` | none, required | Signs access tokens. At least 32 characters. The app will not start without it. |
+| `ENCRYPTION_KEY` | none, required | 32 random bytes in Base64. Encrypts two-factor secrets. Keep it: with another key, two-factor sign-ins stop working. |
+| `PRODUCTION` | `false` | `true` on a real server: refuses to start unless `MAIL_MODE` is `smtp` and `COOKIE_SECURE` is `true` |
 | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | local `subtrack` database | PostgreSQL connection |
 | `MAIL_MODE` | `smtp` | `smtp` sends email, `log` prints it to the console |
 | `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_SMTP_AUTH`, `MAIL_SMTP_STARTTLS` | Mailpit on `localhost:1025` | SMTP server |
@@ -206,6 +210,7 @@ All endpoints are under `/api`. Everything except `/api/auth/*` and `/api/public
 | `GET`, `PUT /users/me` | Read or update the profile (name, phone number, default currency) |
 | `POST /users/me/password` | Change the password |
 | `POST /users/me/email`, `POST /users/me/email/confirm` | Change the email, confirmed by a code sent to the new address |
+| `POST /users/me/logout-all` | End every session on every device |
 | `DELETE /users/me` | Delete the account and everything in it |
 | `POST /users/me/2fa/setup`, `/enable`, `/disable` | Manage two-factor authentication |
 | `GET`, `POST /subscriptions` | List or create |
@@ -225,7 +230,10 @@ Errors always have the same shape:
 
 - **Passwords** must be 8 to 72 characters with a letter, a number and a special character, and are hashed with BCrypt. Verification codes are hashed too.
 - **Forgotten passwords** are reset with an emailed 6-digit code under the same expiry and attempt limits. A reset signs the account out everywhere.
-- **Guessing limits per account**: 10 code attempts and 5 new codes per hour for each kind of code, and 10 sign-in attempts per 15 minutes, counted per account whatever IP they come from. Asking for a new code does not reset the count.
+- **Lockouts that cannot be used against the owner**: 5 wrong passwords or two-factor codes within 15 minutes lock the account only for the network address they came from, so the owner can still sign in from anywhere else. 30 wrong attempts in a row from any addresses lock it everywhere. Entering the password again does not reset the count for the code step, and a password reset lifts every lock. The answer is `429 ACCOUNT_LOCKED`.
+- **Limits on emailed codes**: 10 attempts per hour for each kind of code (asking for a new code does not reset the count), 5 codes a day per account and 100 an hour for the whole app, so a bot cannot use up the sending limit.
+- **A copy of the database is not enough**: emailed codes and refresh tokens are stored as hashes, and two-factor secrets are encrypted with AES-256-GCM using `ENCRYPTION_KEY`, which never touches the database. Secrets saved before that are encrypted at startup.
+- **Nobody can hold on to someone else's email**: a sign-up that was never verified is replaced by a newer one for the same address, and deleted after 48 hours. Names are letters only, so they cannot carry a link.
 - **Security alerts**: an email is sent when the password, the email address (to the old address) or two-factor authentication changes.
 - **Two-factor authentication** is optional and uses an authenticator app (TOTP). A used code cannot be replayed, eight single-use recovery codes cover a lost phone, guesses are limited to 5 per account every 5 minutes, and it applies to Google and Apple sign-ins too.
 - **Sensitive changes** (email, password, turning on two-factor, deleting the account) ask for the current password. A new email only takes effect after a code sent to it is confirmed.
@@ -233,19 +241,18 @@ Errors always have the same shape:
 - **No account discovery**: registering an email that already exists, resending a code, and asking for a password reset respond the same way whether or not the account exists, and take about the same time: emails are sent in the background and a request that sends nothing does the same hashing work. Sign-in gives one error for both a wrong password and an unknown email.
 - **Emails to unconfirmed addresses** carry no text chosen by the person who signed up, so the app cannot be used to send someone else a message.
 - **Browser headers**: a Content-Security-Policy that only allows the app's own scripts plus the Google and Apple sign-in SDKs, and `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` and `Strict-Transport-Security` on every response including static assets.
-- **Sessions**: a 15-minute JWT access token held only in browser memory, plus a 14-day refresh token in an `HttpOnly`, `SameSite=Strict` cookie scoped to `/api/auth`. Refresh tokens are stored hashed, are single-use, and are rotated on every refresh. Reusing an old one ends all of that user's sessions.
+- **Sessions**: a 15-minute JWT access token held only in browser memory, plus a 14-day refresh token in an `HttpOnly`, `SameSite=Strict` cookie scoped to `/api/auth`. Refresh tokens are stored hashed, are single-use, and are rotated on every refresh. Reusing an old one ends all of that user's sessions. Every access token carries the user's token version: changing or resetting the password, "Sign out of all devices" and deleting the account make every earlier token stop working at once, without a blocklist.
 - **Rate limiting** per client IP with a token bucket: 10 requests per minute on `/api/auth/*`, 120 per minute on the rest of the API. Over the limit, the API answers `429` with a `Retry-After` header.
 - **Data isolation**: every subscription query filters by the signed-in user's id, so another user's id returns `404`.
 - **Input validation** on every request body, and JPA parameter binding throughout, so there is no string-built SQL.
 
-Before putting this on the internet: serve it over HTTPS and set `COOKIE_SECURE=true`, use a real SMTP provider, and do not publish the database port.
+Before putting this on the internet: serve it over HTTPS, set `COOKIE_SECURE=true` and `PRODUCTION=true`, use a real SMTP provider, and do not publish the database port.
 
 ## Known limits
 
-- The per-account limits can be used against someone: a person who knows your email can use up your sign-in attempts and keep you out for 15 minutes at a time.
 - Rate-limit counters live in the backend's memory. With more than one backend instance, replace `InMemoryRateLimiter` with an implementation of `RateLimiter` backed by a shared store such as Redis. The same applies to the reminder job, which would need a lock so only one instance sends.
 - "Today" is the server's UTC date, so a renewal can appear a day early or late for users far from UTC.
-- Two-factor secrets are stored unencrypted in the database, as they must be readable to check codes. Encrypt the column or the disk before production use.
+- The per-address sign-in counts live in the backend's memory, like the rate limits, and reset on restart.
 - The phone number is stored but not verified by SMS, which would need a paid SMS provider.
 - Google and Apple sign-in are covered by tests with a stand-in verifier, but have not been run against the real providers, which needs your own client ids.
 - Categories are a fixed list.

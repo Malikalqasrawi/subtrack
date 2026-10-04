@@ -66,6 +66,12 @@ public class UserController {
 			.body(body);
 	}
 
+	@PostMapping("/logout-all")
+	public ResponseEntity<Void> logoutEverywhere(@AuthenticationPrincipal AuthenticatedUser me) {
+		accountService.logoutEverywhere(me.id());
+		return ResponseEntity.noContent().header(HttpHeaders.SET_COOKIE, refreshCookies.expire().toString()).build();
+	}
+
 	@PostMapping("/email")
 	public ResponseEntity<Void> requestEmailChange(@AuthenticationPrincipal AuthenticatedUser me,
 			@Valid @RequestBody ChangeEmailRequest request) {

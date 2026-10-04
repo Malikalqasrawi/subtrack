@@ -33,6 +33,8 @@ public class VerificationService {
 
 	private final RateLimitRule issueLimit;
 
+	private final RateLimitRule globalIssueLimit;
+
 	public VerificationService(VerificationCodeRepository codes, CodeGenerator codeGenerator,
 			PasswordEncoder passwordEncoder, AppProperties properties, Clock clock, RateLimiter rateLimiter) {
 		this.codes = codes;
@@ -42,7 +44,9 @@ public class VerificationService {
 		this.clock = clock;
 		this.rateLimiter = rateLimiter;
 		this.attemptLimit = new RateLimitRule("code-attempts", "/", config.attemptsPerHour(), Duration.ofHours(1));
-		this.issueLimit = new RateLimitRule("code-issue", "/", config.codesPerHour(), Duration.ofHours(1));
+		this.issueLimit = new RateLimitRule("code-issue", "/", config.codesPerDay(), Duration.ofDays(1));
+		this.globalIssueLimit = new RateLimitRule("code-issue-global", "/", config.globalCodesPerHour(),
+				Duration.ofHours(1));
 	}
 
 	public Optional<String> issueCode(User user, CodePurpose purpose) {
@@ -61,7 +65,8 @@ public class VerificationService {
 		if (latest.isPresent() && now.isBefore(latest.get().getCreatedAt().plus(config.resendCooldown()))) {
 			return Optional.empty();
 		}
-		if (!rateLimiter.tryConsume(limitKey(user, purpose), issueLimit).allowed()) {
+		if (!rateLimiter.tryConsume(user.getId().toString(), issueLimit).allowed()
+				|| !rateLimiter.tryConsume("all", globalIssueLimit).allowed()) {
 			return Optional.empty();
 		}
 		codes.deleteByUserIdAndPurpose(user.getId(), purpose);

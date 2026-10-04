@@ -39,6 +39,7 @@ export const userApi = {
   requestEmailChange: (newEmail: string, currentPassword: string) =>
     post<void>('/api/users/me/email', { newEmail, currentPassword }),
   confirmEmailChange: (code: string) => post<User>('/api/users/me/email/confirm', { code }),
+  logoutEverywhere: () => post<void>('/api/users/me/logout-all'),
   deleteAccount: (currentPassword: string) =>
     api<void>('/api/users/me', { method: 'DELETE', body: { currentPassword } }),
 }
