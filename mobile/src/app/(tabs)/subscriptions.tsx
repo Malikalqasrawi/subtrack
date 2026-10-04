@@ -1,24 +1,37 @@
-import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { Subscription } from '@/api/types';
 import { Avatar } from '@/components/avatar';
 import { Card } from '@/components/card';
 import { LoadError, Loading } from '@/components/screen-state';
-import { Fonts, Spacing } from '@/constants/theme';
+import { Fonts, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { categoryLabel, cycleUnit, formatDate, formatMoney, relativeDay, statusLabel } from '@/lib/format';
 import { useSubscriptions } from '@/lib/queries';
 
 export default function SubscriptionsScreen() {
   const theme = useTheme();
+  const router = useRouter();
   const { data: subscriptions, error, refetch, isRefetching } = useSubscriptions();
 
   return (
     <SafeAreaView edges={['top']} style={[styles.screen, { backgroundColor: theme.background }]}>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: theme.text }]}>Subscriptions</Text>
-        <Text style={{ color: theme.textSecondary }}>Everything you pay for on a schedule.</Text>
+        <View style={styles.headerText}>
+          <Text style={[styles.title, { color: theme.text }]}>Subscriptions</Text>
+          <Text style={{ color: theme.textSecondary }}>Everything you pay for on a schedule.</Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Add subscription"
+          hitSlop={8}
+          onPress={() => router.push('/subscription/new')}
+          style={({ pressed }) => [styles.add, { backgroundColor: theme.accent }, pressed && styles.pressed]}>
+          <Feather name="plus" size={22} color={theme.onAccent} />
+        </Pressable>
       </View>
 
       {!subscriptions && !error && <Loading />}
@@ -27,11 +40,21 @@ export default function SubscriptionsScreen() {
         <FlatList
           data={subscriptions}
           keyExtractor={(subscription) => subscription.id}
-          renderItem={({ item }) => <SubscriptionCard subscription={item} />}
+          renderItem={({ item }) => (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Edit ${item.name}`}
+              onPress={() => router.push({ pathname: '/subscription/[id]', params: { id: item.id } })}
+              style={({ pressed }) => pressed && styles.pressed}>
+              <SubscriptionCard subscription={item} />
+            </Pressable>
+          )}
           contentContainerStyle={styles.content}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.accent} />}
           ListEmptyComponent={
-            <Text style={[styles.empty, { color: theme.textSecondary }]}>You have not added any subscriptions yet.</Text>
+            <Text style={[styles.empty, { color: theme.textSecondary }]}>
+              You have not added any subscriptions yet. Tap + to add the first one.
+            </Text>
           }
         />
       )}
@@ -78,9 +101,25 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
+  },
+  headerText: {
+    flex: 1,
     gap: Spacing.half,
+  },
+  add: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Radius.medium,
+  },
+  pressed: {
+    opacity: 0.85,
   },
   title: {
     fontSize: 24,

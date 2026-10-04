@@ -46,6 +46,8 @@ function Navigation() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Protected guard={user !== null}>
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="subscription/new" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="subscription/[id]" options={{ presentation: 'modal' }} />
         </Stack.Protected>
         <Stack.Protected guard={user === null}>
           <Stack.Screen name="sign-in" />
