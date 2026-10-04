@@ -63,6 +63,13 @@ public class AccountService {
 		return sessions.open(user);
 	}
 
+	/** Ends every session on every device, including this one. */
+	@Transactional
+	public void logoutEverywhere(UUID userId) {
+		userService.getById(userId).endAllSessions();
+		sessions.endAll(userId);
+	}
+
 	/** Emails a code to the new address. The email only changes once that code is confirmed. */
 	@Transactional
 	public void requestEmailChange(UUID userId, String newEmail, String currentPassword) {

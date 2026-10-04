@@ -13,7 +13,7 @@ import org.springframework.validation.annotation.Validated;
 
 @ConfigurationProperties(prefix = "app")
 @Validated
-public record AppProperties(@Valid @NotNull Jwt jwt, @Valid @NotNull Verification verification,
+public record AppProperties(boolean production, @Valid @NotNull Security security, @Valid @NotNull Jwt jwt, @Valid @NotNull Verification verification,
 		@Valid @NotNull Login login, @Valid @NotNull Mail mail, @Valid @NotNull Reminders reminders, @Valid @NotNull ExchangeRates exchangeRates,
 		@Valid @NotNull RateLimit rateLimit, @Valid @NotNull Cookies cookies, @Valid @NotNull Social social) {
 
@@ -22,11 +22,15 @@ public record AppProperties(@Valid @NotNull Jwt jwt, @Valid @NotNull Verificatio
 			@NotNull Duration accessTokenTtl, @NotNull Duration refreshTokenTtl) {
 	}
 
-	public record Verification(@NotNull Duration codeTtl, @Min(1) int maxAttempts, @NotNull Duration resendCooldown,
-			@Min(1) int attemptsPerHour, @Min(1) int codesPerHour) {
+	public record Security(String encryptionKey) {
 	}
 
-	public record Login(@Min(1) int attemptsPerAccount, @NotNull Duration window) {
+	public record Verification(@NotNull Duration codeTtl, @Min(1) int maxAttempts, @NotNull Duration resendCooldown,
+			@Min(1) int attemptsPerHour, @Min(1) int codesPerDay, @Min(1) int globalCodesPerHour,
+			@NotNull Duration unverifiedAccountTtl) {
+	}
+
+	public record Login(@Min(1) int maxAttempts, @Min(1) int accountMaxAttempts, @NotNull Duration lockDuration) {
 	}
 
 	public record Mail(@NotBlank String from, boolean async) {

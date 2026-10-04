@@ -13,12 +13,17 @@ import com.subtrack.auth.twofactor.TotpAuthenticator;
 import com.subtrack.auth.twofactor.TotpTestSupport;
 import com.subtrack.mail.EmailMessage;
 import com.subtrack.reminder.ReminderService;
+import com.subtrack.support.MutableClock;
 import com.subtrack.support.RecordingEmailSender;
+import com.subtrack.user.UnverifiedAccountCleanup;
+import com.subtrack.user.UserRepository;
 import jakarta.servlet.http.Cookie;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -28,6 +33,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -47,6 +53,20 @@ class ApiIntegrationTest {
 
 	@Autowired
 	private TotpAuthenticator totp;
+
+	@Autowired
+	private MutableClock clock;
+
+	@Autowired
+	private UserRepository users;
+
+	@Autowired
+	private UnverifiedAccountCleanup unverifiedAccountCleanup;
+
+	@AfterEach
+	void backToNow() {
+		clock.reset();
+	}
 
 	@Test
 	void protectedEndpointsRequireAToken() throws Exception {
@@ -346,33 +366,116 @@ class ApiIntegrationTest {
 	}
 
 	@Test
-	void signInAttemptsAreLimitedPerAccount() throws Exception {
+	void wrongPasswordsLockTheAccountOnlyForTheAddressTheyCameFrom() throws Exception {
 		String email = newEmail();
-		// Verifying the email already checked the password once, which counts as an attempt.
 		signUp(email);
-		for (int i = 0; i < 9; i++) {
-			mvc.perform(json(post("/api/auth/login"), credentials(email, "wrong-password")))
+		for (int i = 0; i < 5; i++) {
+			mvc.perform(json(post("/api/auth/login"), credentials(email, "wrong-password")).with(from("203.0.113.7")))
 				.andExpect(status().isUnauthorized());
 		}
-		mvc.perform(json(post("/api/auth/login"), credentials(email, PASSWORD)))
+		mvc.perform(json(post("/api/auth/login"), credentials(email, PASSWORD)).with(from("203.0.113.7")))
 			.andExpect(status().isTooManyRequests())
-			.andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+			.andExpect(jsonPath("$.code").value("ACCOUNT_LOCKED"));
+		// The owner, somewhere else, is not locked out by someone else's guesses.
+		mvc.perform(json(post("/api/auth/login"), credentials(email, PASSWORD)).with(from("10.0.0.1")))
+			.andExpect(status().isOk());
+
+		clock.advance(Duration.ofMinutes(16));
+		mvc.perform(json(post("/api/auth/login"), credentials(email, PASSWORD)).with(from("203.0.113.7")))
+			.andExpect(status().isOk());
 	}
 
 	@Test
-	void codeEmailsDoNotRepeatTextChosenAtSignUp() throws Exception {
+	void wrongTwoFactorCodesCountTowardsTheSameLock() throws Exception {
+		String email = newEmail();
+		String token = signUp(email);
+		MvcResult setup = mvc
+			.perform(json(post("/api/users/me/2fa/setup"), currentPassword(PASSWORD)).header("Authorization", token))
+			.andReturn();
+		String secret = JsonPath.read(setup.getResponse().getContentAsString(), "$.secret");
+		mvc.perform(json(post("/api/users/me/2fa/enable"), code(TotpTestSupport.currentCode(totp, secret)))
+			.header("Authorization", token)).andExpect(status().isOk());
+		// The secret is not readable from a copy of the database.
+		assertThat(users.findByEmail(email).orElseThrow().getTotpSecret()).startsWith("v1:").doesNotContain(secret);
+
+		for (int i = 0; i < 5; i++) {
+			MvcResult challenged = mvc.perform(json(post("/api/auth/login"), credentials(email, PASSWORD)))
+				.andExpect(status().isOk())
+				.andReturn();
+			String challenge = JsonPath.read(challenged.getResponse().getContentAsString(), "$.challengeToken");
+			mvc.perform(json(post("/api/auth/2fa"), secondFactor(challenge, "000000")))
+				.andExpect(status().isBadRequest());
+		}
+		// Entering the password again did not reset the count.
+		mvc.perform(json(post("/api/auth/login"), credentials(email, PASSWORD)))
+			.andExpect(status().isTooManyRequests())
+			.andExpect(jsonPath("$.code").value("ACCOUNT_LOCKED"));
+	}
+
+	@Test
+	void aPasswordChangeOrSignOutEverywhereEndsOlderAccessTokens() throws Exception {
+		String email = newEmail();
+		String token = signUp(email);
+		MvcResult changed = mvc.perform(json(post("/api/users/me/password"), """
+				{"currentPassword": "%s", "newPassword": "changed-pass-9"}""".formatted(PASSWORD))
+			.header("Authorization", token)).andExpect(status().isOk()).andReturn();
+		mvc.perform(get("/api/users/me").header("Authorization", token)).andExpect(status().isUnauthorized());
+
+		String newToken = "Bearer " + JsonPath.read(changed.getResponse().getContentAsString(), "$.accessToken");
+		Cookie session = changed.getResponse().getCookie("refresh_token");
+		mvc.perform(get("/api/users/me").header("Authorization", newToken)).andExpect(status().isOk());
+
+		mvc.perform(post("/api/users/me/logout-all").header("Authorization", newToken))
+			.andExpect(status().isNoContent());
+		mvc.perform(get("/api/users/me").header("Authorization", newToken)).andExpect(status().isUnauthorized());
+		mvc.perform(post("/api/auth/refresh").cookie(session)).andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void signUpsThatWereNeverVerifiedAreDeletedAfterTwoDays() throws Exception {
+		String unverified = newEmail();
+		String verified = newEmail();
+		register(unverified, PASSWORD);
+		signUp(verified);
+
+		clock.advance(Duration.ofHours(47));
+		unverifiedAccountCleanup.deleteOld();
+		assertThat(users.findByEmail(unverified)).isPresent();
+
+		clock.advance(Duration.ofHours(2));
+		unverifiedAccountCleanup.deleteOld();
+		assertThat(users.findByEmail(unverified)).isEmpty();
+		assertThat(users.findByEmail(verified)).isPresent();
+	}
+
+	@Test
+	void emailedCodesAreCappedPerAccountPerDay() throws Exception {
+		String email = newEmail();
+		register(email, PASSWORD);
+		for (int i = 0; i < 6; i++) {
+			clock.advance(Duration.ofSeconds(61));
+			mvc.perform(json(post("/api/auth/resend-verification"), "{\"email\": \"%s\"}".formatted(email)))
+				.andExpect(status().isAccepted());
+		}
+		assertThat(emails.sentTo(email)).hasSize(5);
+	}
+
+	@Test
+	void codeEmailsCarryNoTextChosenAtSignUpAndNamesAreLettersOnly() throws Exception {
 		String email = newEmail();
 		mvc.perform(json(post("/api/auth/register"), """
-				{"email": "%s", "password": "%s", "displayName": "Visit evil.example", "phoneNumber": "+962791234567"}"""
+				{"email": "%s", "password": "%s", "displayName": "Malik O'Neil-Smith", "phoneNumber": "+962791234567"}"""
 			.formatted(email, PASSWORD))).andExpect(status().isAccepted());
 		assertThat(emails.sentTo(email)).hasSize(1);
-		assertThat(emails.sentTo(email).get(0).body()).doesNotContain("evil.example");
+		assertThat(emails.sentTo(email).get(0).body()).doesNotContain("Malik");
 
-		mvc.perform(json(post("/api/auth/register"), """
-				{"email": "%s", "password": "%s", "displayName": "Line\\nbreak", "phoneNumber": "+962791234567"}"""
-			.formatted(newEmail(), PASSWORD)))
-			.andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.fieldErrors.displayName").exists());
+		for (String name : new String[] { "Visit evil.example", "http://evil", "Line\\nbreak", "Malik 2" }) {
+			mvc.perform(json(post("/api/auth/register"), """
+					{"email": "%s", "password": "%s", "displayName": "%s", "phoneNumber": "+962791234567"}"""
+				.formatted(newEmail(), PASSWORD, name)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.fieldErrors.displayName").exists());
+		}
 	}
 
 	@Test
@@ -443,9 +546,11 @@ class ApiIntegrationTest {
 			.header("Authorization", token))
 			.andExpect(status().isForbidden())
 			.andExpect(jsonPath("$.code").value("WRONG_PASSWORD"));
-		mvc.perform(json(post("/api/users/me/password"), """
+		MvcResult changed = mvc.perform(json(post("/api/users/me/password"), """
 				{"currentPassword": "%s", "newPassword": "changed-pass-9"}""".formatted(PASSWORD))
-			.header("Authorization", token)).andExpect(status().isOk()).andExpect(jsonPath("$.accessToken").isNotEmpty());
+			.header("Authorization", token)).andExpect(status().isOk()).andReturn();
+		// The change ended the old token and answered with a new one.
+		token = "Bearer " + JsonPath.read(changed.getResponse().getContentAsString(), "$.accessToken");
 
 		String newEmail = newEmail();
 		String taken = newEmail();
@@ -484,7 +589,7 @@ class ApiIntegrationTest {
 			.header("Authorization", token)).andExpect(status().isNoContent());
 
 		mvc.perform(json(post("/api/auth/login"), credentials(email, PASSWORD))).andExpect(status().isUnauthorized());
-		mvc.perform(get("/api/users/me").header("Authorization", token)).andExpect(status().isNotFound());
+		mvc.perform(get("/api/users/me").header("Authorization", token)).andExpect(status().isUnauthorized());
 		// The address is free to register again.
 		register(email, PASSWORD);
 		assertThat(emails.sentTo(email)).hasSize(2);
@@ -540,6 +645,13 @@ class ApiIntegrationTest {
 
 	private List<String> subjectsSentTo(String email) {
 		return emails.sentTo(email).stream().map(EmailMessage::subject).toList();
+	}
+
+	private static RequestPostProcessor from(String address) {
+		return request -> {
+			request.setRemoteAddr(address);
+			return request;
+		};
 	}
 
 	private static String currentPassword(String password) {

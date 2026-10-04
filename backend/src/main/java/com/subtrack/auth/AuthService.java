@@ -16,17 +16,17 @@ import com.subtrack.auth.twofactor.TwoFactorService;
 import com.subtrack.auth.verification.CodeMailer;
 import com.subtrack.auth.verification.CodePurpose;
 import com.subtrack.auth.verification.VerificationService;
+import com.subtrack.common.ClientAddress;
 import com.subtrack.common.error.BadRequestException;
 import com.subtrack.common.error.ForbiddenException;
 import com.subtrack.common.error.TooManyRequestsException;
 import com.subtrack.common.error.UnauthorizedException;
-import com.subtrack.config.AppProperties;
-import com.subtrack.ratelimit.RateLimitRule;
-import com.subtrack.ratelimit.RateLimiter;
 import com.subtrack.user.User;
 import com.subtrack.user.UserRepository;
 import com.subtrack.user.UserService;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -37,10 +37,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuthService {
 
 	private static final String DEFAULT_CURRENCY = "USD";
-
-	/** Second-factor guesses allowed per account, on top of the per-IP limit on the endpoint. */
-	private static final RateLimitRule TWO_FACTOR_ATTEMPTS = new RateLimitRule("two-factor", "/", 5,
-			Duration.ofMinutes(5));
 
 	private final UserRepository users;
 
@@ -64,12 +60,11 @@ public class AuthService {
 
 	private final SocialLoginService socialLoginService;
 
-	private final RateLimiter rateLimiter;
-
 	private final SecurityAlertMailer alerts;
 
-	/** Sign-in attempts allowed per account, on top of the per-IP limit on the endpoint. */
-	private final RateLimitRule loginAttempts;
+	private final LoginGuard loginGuard;
+
+	private final Clock clock;
 
 	/** Compared against when the email is unknown, so both cases take the same time. */
 	private final String dummyPasswordHash;
@@ -77,8 +72,8 @@ public class AuthService {
 	public AuthService(UserRepository users, UserService userService, PasswordEncoder passwordEncoder,
 			VerificationService verificationService, CodeMailer codeMailer, SessionService sessions,
 			AccessTokenService accessTokens, RefreshTokenService refreshTokens, TwoFactorService twoFactorService,
-			TwoFactorChallengeService challenges, SocialLoginService socialLoginService, RateLimiter rateLimiter,
-			SecurityAlertMailer alerts, AppProperties properties) {
+			TwoFactorChallengeService challenges, SocialLoginService socialLoginService,
+			SecurityAlertMailer alerts, LoginGuard loginGuard, Clock clock) {
 		this.users = users;
 		this.userService = userService;
 		this.passwordEncoder = passwordEncoder;
@@ -90,10 +85,9 @@ public class AuthService {
 		this.twoFactorService = twoFactorService;
 		this.challenges = challenges;
 		this.socialLoginService = socialLoginService;
-		this.rateLimiter = rateLimiter;
 		this.alerts = alerts;
-		this.loginAttempts = new RateLimitRule("login", "/", properties.login().attemptsPerAccount(),
-				properties.login().window());
+		this.loginGuard = loginGuard;
+		this.clock = clock;
 		this.dummyPasswordHash = passwordEncoder.encode("not-a-real-password");
 	}
 
@@ -144,6 +138,7 @@ public class AuthService {
 			.filter(found -> !found.isEmailVerified())
 			.orElseThrow(AuthService::invalidCode);
 		verificationService.verify(user, CodePurpose.EMAIL_VERIFICATION, request.code()).requireVerified();
+		clearFailedLogins(user);
 		return sessions.open(userService.markEmailVerified(user.getId()));
 	}
 
@@ -164,13 +159,20 @@ public class AuthService {
 	public AuthSession completeTwoFactor(String challengeToken, String code) {
 		UUID userId = challenges.verify(challengeToken)
 			.orElseThrow(() -> new UnauthorizedException("CHALLENGE_EXPIRED", "That took too long. Sign in again."));
-		if (!rateLimiter.tryConsume(userId.toString(), TWO_FACTOR_ATTEMPTS).allowed()) {
-			throw new TooManyRequestsException("Too many wrong codes. Wait a few minutes and try again.");
-		}
-		if (!twoFactorService.verify(userId, code)) {
+		String address = ClientAddress.current();
+		Instant now = clock.instant();
+		requireNotLocked(userService.getById(userId), address, now);
+		boolean accepted = twoFactorService.verify(userId, code);
+		// Loaded again: checking the code changed the user (the last used code, or a recovery code).
+		User user = userService.getById(userId);
+		if (!accepted) {
+			// Wrong codes count towards the same lock as wrong passwords, so they cannot be guessed.
+			loginGuard.recordWrong(user, address, now);
+			users.save(user);
 			throw new BadRequestException("INVALID_2FA_CODE", "That code is not valid");
 		}
-		return sessions.open(userService.getById(userId));
+		clearFailedLogins(user);
+		return sessions.open(user);
 	}
 
 	/** Emails a reset code if the address has an account; the response is the same either way. */
@@ -188,6 +190,7 @@ public class AuthService {
 		User user = users.findByEmail(User.normalizeEmail(request.email())).orElseThrow(AuthService::invalidCode);
 		verificationService.verify(user, CodePurpose.PASSWORD_RESET, request.code()).requireVerified();
 		userService.resetPassword(user.getId(), passwordEncoder.encode(request.newPassword()));
+		loginGuard.clearAddresses(user.getId());
 		// Whoever knew the old password is signed out everywhere.
 		sessions.endAll(user.getId());
 		alerts.send(user.getEmail(), SecurityAlert.PASSWORD_CHANGED);
@@ -206,20 +209,43 @@ public class AuthService {
 	/** Every way of signing in ends here, so two-factor cannot be skipped by picking another way in. */
 	private SignInResult afterFirstFactor(User user) {
 		if (user.isTotpEnabled()) {
+			// The count is kept: entering the password again must not give more guesses at the code.
 			return new SignInResult.TwoFactorRequired(challenges.issue(user));
 		}
+		clearFailedLogins(user);
 		return new SignInResult.SignedIn(sessions.open(user));
 	}
 
 	private Optional<User> findByCredentials(String email, String password) {
-		String normalized = User.normalizeEmail(email);
-		if (!rateLimiter.tryConsume(normalized, loginAttempts).allowed()) {
-			throw new TooManyRequestsException("Too many sign-in attempts. Wait a few minutes and try again.");
-		}
-		Optional<User> user = users.findByEmail(normalized);
+		Optional<User> user = users.findByEmail(User.normalizeEmail(email));
+		String address = ClientAddress.current();
+		Instant now = clock.instant();
+		user.ifPresent(found -> requireNotLocked(found, address, now));
 		String hash = user.map(User::getPasswordHash).orElse(dummyPasswordHash);
-		boolean matches = passwordEncoder.matches(password, hash);
-		return matches ? user : Optional.empty();
+		if (passwordEncoder.matches(password, hash)) {
+			return user;
+		}
+		user.ifPresent(found -> {
+			loginGuard.recordWrong(found, address, now);
+			users.save(found);
+		});
+		return Optional.empty();
+	}
+
+	private void requireNotLocked(User user, String address, Instant now) {
+		loginGuard.lockedUntil(user, address, now).ifPresent(until -> {
+			long minutes = Math.max(1, Duration.between(now, until).plusSeconds(59).toMinutes());
+			throw new TooManyRequestsException("ACCOUNT_LOCKED", "Too many wrong attempts. Try again in " + minutes
+					+ (minutes == 1 ? " minute" : " minutes") + ", or reset your password.");
+		});
+	}
+
+	private void clearFailedLogins(User user) {
+		boolean hadFailures = user.hasFailedLogins();
+		loginGuard.recordSuccess(user, ClientAddress.current());
+		if (hadFailures) {
+			users.save(user);
+		}
 	}
 
 	private boolean sendCode(User user, CodePurpose purpose) {
