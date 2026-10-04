@@ -9,6 +9,7 @@ import { PasswordField } from '@/components/password-field';
 import { SettingsSection } from '@/components/settings/section';
 import { TextField } from '@/components/text-field';
 import { useTheme } from '@/hooks/use-theme';
+import { isValidEmail } from '@/lib/email';
 import { errorMessage } from '@/lib/errors';
 import { useCurrentUser, useSession } from '@/session/session-context';
 
@@ -21,13 +22,19 @@ export function EmailSection() {
   // Set once a code has been sent to the new address and is waiting to be confirmed.
   const [pendingEmail, setPendingEmail] = useState<string>();
   const [code, setCode] = useState('');
+  const [emailError, setEmailError] = useState<string>();
   const [result, setResult] = useState<BannerProps>();
   const [busy, setBusy] = useState(false);
 
   async function requestChange() {
     const address = newEmail.trim();
-    setBusy(true);
     setResult(undefined);
+    if (!isValidEmail(address)) {
+      setEmailError('Enter a full email address, like name@example.com');
+      return;
+    }
+    setEmailError(undefined);
+    setBusy(true);
     try {
       await userApi.requestEmailChange(address, password);
       setPendingEmail(address);
@@ -87,6 +94,7 @@ export function EmailSection() {
         keyboardType="email-address"
         textContentType="emailAddress"
         maxLength={254}
+        error={emailError}
       />
       {user.hasPassword && (
         <PasswordField label="Current password" value={password} onChange={setPassword} autoComplete="current-password" />

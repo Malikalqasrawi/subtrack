@@ -13,6 +13,7 @@ app:
   mail:
     mode: recording
     async: false
+    jobs: false
   reminders:
     enabled: false
   exchange-rates:

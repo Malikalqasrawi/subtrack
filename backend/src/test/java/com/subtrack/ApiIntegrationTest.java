@@ -11,10 +11,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import com.subtrack.auth.twofactor.TotpAuthenticator;
 import com.subtrack.auth.twofactor.TotpTestSupport;
+import com.subtrack.mail.EmailDispatcher;
 import com.subtrack.mail.EmailMessage;
 import com.subtrack.reminder.ReminderService;
 import com.subtrack.support.MutableClock;
-import com.subtrack.support.RecordingEmailSender;
+import com.subtrack.support.RecordingMailTransport;
 import com.subtrack.user.UnverifiedAccountCleanup;
 import com.subtrack.user.UserRepository;
 import jakarta.servlet.http.Cookie;
@@ -46,7 +47,10 @@ class ApiIntegrationTest {
 	private MockMvc mvc;
 
 	@Autowired
-	private RecordingEmailSender emails;
+	private RecordingMailTransport emails;
+
+	@Autowired
+	private EmailDispatcher emailDispatcher;
 
 	@Autowired
 	private ReminderService reminderService;
@@ -66,6 +70,7 @@ class ApiIntegrationTest {
 	@AfterEach
 	void backToNow() {
 		clock.reset();
+		emails.setDown(false);
 	}
 
 	@Test
@@ -125,17 +130,39 @@ class ApiIntegrationTest {
 	}
 
 	@Test
-	void registeringAnExistingEmailLooksTheSameAndSendsNothing() throws Exception {
+	void registeringAnExistingEmailLooksTheSameAndOnlyTellsItsOwner() throws Exception {
 		String email = newEmail();
 		signUp(email);
 		int emailsBefore = emails.sentTo(email).size();
 
-		mvc.perform(json(post("/api/auth/register"), registration(email, "another-password-1")))
-			.andExpect(status().isAccepted());
+		for (int attempt = 0; attempt < 3; attempt++) {
+			mvc.perform(json(post("/api/auth/register"), registration(email, "another-password-1")))
+				.andExpect(status().isAccepted());
+		}
 
-		assertThat(emails.sentTo(email)).hasSize(emailsBefore);
+		// One notice however often it is tried, with nothing in it that was typed into the form.
+		assertThat(emails.sentTo(email)).hasSize(emailsBefore + 1);
+		EmailMessage notice = emails.sentTo(email).get(emailsBefore);
+		assertThat(notice.subject()).isEqualTo("You already have a Subtrack account");
+		assertThat(notice.body()).doesNotContain("Test").doesNotContainPattern("\\d{6}");
 		mvc.perform(json(post("/api/auth/login"), credentials(email, "another-password-1")))
 			.andExpect(status().isUnauthorized());
+		mvc.perform(json(post("/api/auth/login"), credentials(email, PASSWORD))).andExpect(status().isOk());
+	}
+
+	@Test
+	void signUpStillWorksWhileTheMailServerIsDownAndTheCodeArrivesLater() throws Exception {
+		String email = newEmail();
+		emails.setDown(true);
+		register(email, PASSWORD);
+		assertThat(emails.sentTo(email)).isEmpty();
+
+		emails.setDown(false);
+		clock.advance(Duration.ofSeconds(61));
+		emailDispatcher.sendDue();
+
+		mvc.perform(json(post("/api/auth/verify"), verification(email, PASSWORD, emails.lastCodeFor(email))))
+			.andExpect(status().isOk());
 	}
 
 	@Test
@@ -542,9 +569,9 @@ class ApiIntegrationTest {
 		mvc.perform(json(post("/api/auth/login"), credentials(email, PASSWORD)))
 			.andExpect(jsonPath("$.twoFactorRequired").value(false));
 
+		String enablingCode = TotpTestSupport.currentCode(totp, secret);
 		MvcResult enabled = mvc
-			.perform(json(post("/api/users/me/2fa/enable"), code(TotpTestSupport.currentCode(totp, secret)))
-				.header("Authorization", token))
+			.perform(json(post("/api/users/me/2fa/enable"), code(enablingCode)).header("Authorization", token))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.recoveryCodes.length()").value(8))
 			.andReturn();
@@ -564,7 +591,7 @@ class ApiIntegrationTest {
 		mvc.perform(get("/api/subscriptions").header("Authorization", "Bearer " + challenge))
 			.andExpect(status().isUnauthorized());
 		// The code that enabled two-factor was already used, so replaying it fails.
-		mvc.perform(json(post("/api/auth/2fa"), secondFactor(challenge, TotpTestSupport.currentCode(totp, secret))))
+		mvc.perform(json(post("/api/auth/2fa"), secondFactor(challenge, enablingCode)))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.code").value("INVALID_2FA_CODE"));
 		mvc.perform(json(post("/api/auth/2fa"), secondFactor(challenge, TotpTestSupport.nextCode(totp, secret))))

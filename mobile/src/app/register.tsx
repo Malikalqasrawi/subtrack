@@ -12,6 +12,7 @@ import { TextField } from '@/components/text-field';
 import { TextLink } from '@/components/text-link';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { isValidEmail } from '@/lib/email';
 import { isStrongPassword, isValidPhone, normalizePhone } from '@/lib/password';
 import { pendingVerification } from '@/session/pending-verification';
 
@@ -30,13 +31,13 @@ export default function RegisterScreen() {
 
   async function submit() {
     setError(undefined);
-    if (!isValidPhone(phone)) {
-      setFieldErrors({ phoneNumber: 'Use international format, for example +962791234567' });
-      return;
-    }
-    setFieldErrors({});
-    setSubmitting(true);
     const address = email.trim();
+    const mistakes: Record<string, string> = {};
+    if (!isValidEmail(address)) mistakes.email = 'Enter a full email address, like name@example.com';
+    if (!isValidPhone(phone)) mistakes.phoneNumber = 'Use international format, for example +962791234567';
+    setFieldErrors(mistakes);
+    if (Object.keys(mistakes).length > 0) return;
+    setSubmitting(true);
     try {
       await authApi.register(address, password, displayName.trim(), normalizePhone(phone));
       pendingVerification.set({ email: address, password });

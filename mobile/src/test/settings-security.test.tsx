@@ -171,6 +171,17 @@ describe('email address', () => {
     expect(screen.getByLabelText('New email')).toHaveDisplayValue('');
   });
 
+  it('stops a badly formed new email before calling the API', async () => {
+    await renderScreen(<EmailSection />);
+
+    await userEvent.type(screen.getByLabelText('New email'), 'new@subtrack');
+    await userEvent.type(screen.getByLabelText('Current password'), PASSWORD);
+    await userEvent.press(screen.getByRole('button', { name: 'Send confirmation code' }));
+
+    expect(screen.getByText('Enter a full email address, like name@example.com')).toBeOnTheScreen();
+    expect(userApi.requestEmailChange).not.toHaveBeenCalled();
+  });
+
   it('says when the new address already belongs to an account', async () => {
     jest.mocked(userApi.requestEmailChange).mockRejectedValue(new ApiError(409, 'EMAIL_IN_USE', 'That email address is already in use'));
     await renderScreen(<EmailSection />);

@@ -8,9 +8,9 @@ import org.springframework.stereotype.Component;
 /** Prints emails to the console so local development needs no mail server. */
 @Component
 @ConditionalOnProperty(name = "app.mail.mode", havingValue = "log")
-public class LoggingEmailSender implements EmailSender {
+public class LoggingMailTransport implements MailTransport {
 
-	private static final Logger log = LoggerFactory.getLogger(LoggingEmailSender.class);
+	private static final Logger log = LoggerFactory.getLogger(LoggingMailTransport.class);
 
 	@Override
 	public void send(EmailMessage message) {

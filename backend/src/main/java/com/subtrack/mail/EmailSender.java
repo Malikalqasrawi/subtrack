@@ -1,8 +1,8 @@
 package com.subtrack.mail;
 
 /**
- * The only thing the rest of the application knows about email. Callers never depend on
- * SMTP, so the transport can be swapped (console, SMTP, a provider API) through configuration.
+ * The only thing the rest of the application knows about email. Sending means handing the
+ * message over: it is delivered in the background, and tried again if the mail server is down.
  */
 public interface EmailSender {
 

@@ -49,6 +49,19 @@ describe('RegisterScreen', () => {
     expect(mockRouter.push).toHaveBeenCalledWith('/verify-email');
   });
 
+  it('stops a badly formed email before calling the API', async () => {
+    await renderScreen(<RegisterScreen />);
+    await userEvent.type(screen.getByLabelText('Name'), 'Malik Demo');
+    await userEvent.type(screen.getByLabelText('Email'), 'demo@subtrack');
+    await userEvent.type(screen.getByLabelText('Phone number'), '+962791234567');
+    await userEvent.type(screen.getByLabelText('Password'), PASSWORD);
+    await userEvent.press(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(screen.getByText('Enter a full email address, like name@example.com')).toBeOnTheScreen();
+    expect(authApi.register).not.toHaveBeenCalled();
+    expect(mockRouter.push).not.toHaveBeenCalled();
+  });
+
   it('stops a phone number without a country code before calling the API', async () => {
     await renderScreen(<RegisterScreen />);
     await fillIn('0791234567');

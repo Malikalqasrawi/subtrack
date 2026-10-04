@@ -62,6 +62,8 @@ public class AuthService {
 
 	private final SecurityAlertMailer alerts;
 
+	private final ExistingAccountNotice existingAccountNotice;
+
 	private final LoginGuard loginGuard;
 
 	private final Clock clock;
@@ -73,7 +75,8 @@ public class AuthService {
 			VerificationService verificationService, CodeMailer codeMailer, SessionService sessions,
 			AccessTokenService accessTokens, RefreshTokenService refreshTokens, TwoFactorService twoFactorService,
 			TwoFactorChallengeService challenges, SocialLoginService socialLoginService,
-			SecurityAlertMailer alerts, LoginGuard loginGuard, Clock clock) {
+			SecurityAlertMailer alerts, ExistingAccountNotice existingAccountNotice, LoginGuard loginGuard,
+			Clock clock) {
 		this.users = users;
 		this.userService = userService;
 		this.passwordEncoder = passwordEncoder;
@@ -86,6 +89,7 @@ public class AuthService {
 		this.challenges = challenges;
 		this.socialLoginService = socialLoginService;
 		this.alerts = alerts;
+		this.existingAccountNotice = existingAccountNotice;
 		this.loginGuard = loginGuard;
 		this.clock = clock;
 		this.dummyPasswordHash = passwordEncoder.encode("not-a-real-password");
@@ -108,6 +112,8 @@ public class AuthService {
 		}
 		User user = existing.get();
 		if (user.isEmailVerified()) {
+			// The answer gives nothing away. The owner of the address is told by email instead.
+			existingAccountNotice.send(user);
 			stall();
 			return;
 		}

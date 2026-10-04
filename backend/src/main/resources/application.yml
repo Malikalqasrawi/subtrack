@@ -64,6 +64,10 @@ app:
     mode: ${MAIL_MODE:smtp}
     from: ${MAIL_FROM:Subtrack <no-reply@subtrack.local>}
     async: true
+    # The jobs that retry failed emails and delete old ones. Off in tests, which run them by hand.
+    jobs: true
+    # How long an email that was sent or given up on stays in the outbox table.
+    keep-for: 7d
   reminders:
     enabled: true
     cron: "0 0 8 * * *"
