@@ -1,0 +1,84 @@
+spring:
+  application:
+    name: subtrack
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/subtrack}
+    username: ${DB_USERNAME:subtrack}
+    password: ${DB_PASSWORD:subtrack}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${MAIL_SMTP_AUTH:false}
+      mail.smtp.starttls.enable: ${MAIL_SMTP_STARTTLS:false}
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+
+server:
+  port: ${PORT:8080}
+  error:
+    include-stacktrace: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+app:
+  jwt:
+    # No default on purpose: the app refuses to start without a real secret.
+    secret: ${JWT_SECRET:}
+    access-token-ttl: 15m
+    refresh-token-ttl: 14d
+  verification:
+    code-ttl: 15m
+    max-attempts: 5
+    resend-cooldown: 60s
+    # Per account, across every code issued in that hour.
+    attempts-per-hour: 10
+    codes-per-hour: 5
+  login:
+    # Per account, whatever IP the attempts come from.
+    attempts-per-account: 10
+    window: 15m
+  mail:
+    # smtp = send real email, log = print emails to the console
+    mode: ${MAIL_MODE:smtp}
+    from: ${MAIL_FROM:Subtrack <no-reply@subtrack.local>}
+    async: true
+  reminders:
+    enabled: true
+    cron: "0 0 8 * * *"
+  exchange-rates:
+    # remote = live rates with a built-in fallback table, fixed = fallback table only
+    provider: ${EXCHANGE_RATES_PROVIDER:remote}
+    url: https://open.er-api.com/v6/latest/USD
+    cache-ttl: 12h
+  rate-limit:
+    enabled: true
+    # First matching rule wins, so list the strictest prefixes first.
+    rules:
+      - name: auth
+        path-prefix: /api/auth/
+        capacity: 10
+        window: 1m
+      - name: api
+        path-prefix: /api/
+        capacity: 120
+        window: 1m
+  cookies:
+    # Set to true when the app is served over HTTPS.
+    secure: ${COOKIE_SECURE:false}
+  social:
+    # Leave a client id empty to switch that provider off. See the README for how to get them.
+    google:
+      client-id: ${GOOGLE_CLIENT_ID:}
+    apple:
+      client-id: ${APPLE_CLIENT_ID:}

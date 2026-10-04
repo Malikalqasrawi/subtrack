@@ -1,0 +1,7 @@
+package com.subtrack.subscription;
+
+public enum Category {
+
+	ENTERTAINMENT, MUSIC, GAMING, PRODUCTIVITY, CLOUD, EDUCATION, HEALTH, NEWS, UTILITIES, FINANCE, SHOPPING, OTHER
+
+}

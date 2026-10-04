@@ -1,0 +1,3 @@
+server:
+  # Behind the nginx container, so the client IP comes from X-Forwarded-For.
+  forward-headers-strategy: native

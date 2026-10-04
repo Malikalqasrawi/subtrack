@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:subtrack;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+app:
+  jwt:
+    secret: test-secret-test-secret-test-secret-0123456789
+  mail:
+    mode: recording
+    async: false
+  reminders:
+    enabled: false
+  exchange-rates:
+    provider: fixed
+  rate-limit:
+    rules:
+      - name: api
+        path-prefix: /api/
+        capacity: 10000
+        window: 1m
