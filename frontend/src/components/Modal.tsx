@@ -1,6 +1,7 @@
 import { motion } from 'motion/react'
 import { useEffect } from 'react'
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import Icon from './Icon'
 
 /** Render inside <AnimatePresence> so it can animate out when it is removed. */
@@ -13,7 +14,8 @@ export default function Modal({ title, onClose, children }: { title: string; onC
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [onClose])
 
-  return (
+  // Rendered at the end of <body> so it sits above everything, including the mobile navigation bar.
+  return createPortal(
     <motion.div
       className="modal-backdrop"
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
@@ -40,6 +42,7 @@ export default function Modal({ title, onClose, children }: { title: string; onC
         </div>
         {children}
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body,
   )
 }
