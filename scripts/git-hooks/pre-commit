@@ -1,0 +1,49 @@
+#!/bin/bash
+# Blocks commits that would add secrets: secret files, key-like strings, or any value from .env.
+# Enable once per clone with: git config core.hooksPath scripts/git-hooks
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$staged" ] && exit 0
+problems=0
+
+# Secret files
+while IFS= read -r file; do
+  case "$(basename "$file")" in
+    .env.example) ;;
+    .env|.env.*|*.jks|*.keystore|*.pem|*.p12)
+      echo "✗ $file must not be committed: it holds secrets"
+      problems=1 ;;
+  esac
+done <<< "$staged"
+
+# Key-like strings in the staged changes
+pattern='BEGIN [A-Z ]*PRIVATE KEY|gh[pousr]_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|GOCSPX-[A-Za-z0-9_-]{20,}|(sk|rk)_(test|live)_[A-Za-z0-9]{10,}'
+suspicious=$(git diff --cached --name-only -G"$pattern")
+if [ -n "$suspicious" ]; then
+  echo "✗ These files contain something that looks like an API key:"
+  echo "$suspicious" | sed 's/^/    /'
+  problems=1
+fi
+
+# Actual values from .env
+if [ -f .env ]; then
+  added=$(git diff --cached -U0 | grep '^+' | grep -v '^+++')
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|\#*) continue ;; esac
+    key=${line%%=*}
+    value=${line#*=}
+    [ ${#value} -lt 6 ] && continue
+    # Pass the value via process substitution so it never appears in the process list.
+    if grep -qF -f <(printf '%s\n' "$value") <<< "$added"; then
+      echo "✗ The value of $key (from .env) is in a staged change"
+      problems=1
+    fi
+  done < .env
+fi
+
+if [ $problems -ne 0 ]; then
+  echo
+  echo "Commit stopped. Remove the secret, 'git add' the file again, then commit."
+  exit 1
+fi
+exit 0

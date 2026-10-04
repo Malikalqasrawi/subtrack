@@ -2,6 +2,25 @@
 
 A web app for keeping track of your subscriptions: what you pay for, how much it costs per month and per year, and when each one renews.
 
+[![CI](https://github.com/Malikalqasrawi/subtrack/actions/workflows/ci.yml/badge.svg)](https://github.com/Malikalqasrawi/subtrack/actions/workflows/ci.yml)
+![Java](https://img.shields.io/badge/Java-21-E76F00?logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4-6DB33F?logo=springboot&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-compose-2496ED?logo=docker&logoColor=white)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+## Why
+
+Subscriptions are easy to start and easy to forget. The charges are small, they land on different days, some are yearly, and a few are in another currency, so the real monthly total is rarely known. Subtrack answers three questions in one place:
+
+- **What does it all cost?** Every subscription is turned into a monthly figure in one currency, whatever its billing cycle or currency.
+- **What is charged when?** The dashboard shows what will actually be billed in each of the next 12 months, and the calendar shows it day by day.
+- **What is about to renew?** A reminder email arrives a chosen number of days before, once per renewal, in time to cancel.
+
+## Features
+
 - **Dashboard** with monthly and yearly spend, charges for the next 12 months, spend by category, and renewals in the next 30 days
 - **Subscriptions** with search, status filter, add, edit and delete
 - **Calendar** showing which subscription charges on which day
@@ -19,9 +38,12 @@ A web app for keeping track of your subscriptions: what you pay for, how much it
 
 ## Screenshots
 
-| | | |
+| Dashboard | Subscriptions | Add subscription |
 |---|---|---|
 | <img src="docs/screenshots/dashboard.png" width="250" alt="Dashboard"> | <img src="docs/screenshots/subscriptions.png" width="250" alt="Subscriptions"> | <img src="docs/screenshots/add-subscription.png" width="250" alt="Add subscription"> |
+
+| Calendar | Light mode | Sign in |
+|---|---|---|
 | <img src="docs/screenshots/calendar.png" width="250" alt="Calendar"> | <img src="docs/screenshots/dashboard-light.png" width="250" alt="Dashboard in light mode"> | <img src="docs/screenshots/sign-in.png" width="250" alt="Sign in"> |
 
 ## Project structure
@@ -38,6 +60,7 @@ subtrack/
 │       ├── lib/           data hooks (TanStack Query), formatting, theme
 │       └── pages/         one file per screen
 ├── docs/screenshots/
+├── scripts/git-hooks/     pre-commit hook that blocks secrets
 ├── docker-compose.yml     nginx, backend, PostgreSQL, Mailpit
 └── .env.example           copy to .env and fill in
 ```
@@ -129,7 +152,31 @@ cd backend && ./mvnw test
 cd frontend && npm run lint && npm test && npm run build
 ```
 
-Backend tests run against an in-memory H2 database in PostgreSQL mode, so they need no Docker. They cover sign-up and verification, the password rules, password reset, two-factor sign-in (including the RFC 6238 test vectors), email and password changes, account deletion, Google/Apple account linking, token rotation, per-user data isolation, the insight calculations, reminders, billing-date arithmetic, rate limiting and the exchange-rate cache.
+83 backend tests and 38 frontend tests. They need no Docker, PostgreSQL, mail server, Google account or network: the backend runs against an in-memory H2 database in PostgreSQL mode, and the frontend tests replace the API.
+
+| Backend test | Covers |
+|---|---|
+| `ApiIntegrationTest` | End-to-end over HTTP: sign-up and verification, password rules, password reset, two-factor sign-in, lockouts per network address, token versions and sign-out everywhere, email and password changes, security alerts, limits on emailed codes, clean-up of unverified sign-ups, account deletion, token rotation, per-user data isolation, insights, reminders |
+| `LoginGuardTest` | Lockout per network address, the account-wide backstop, counts that expire or reset |
+| `SecretBoxTest` | AES-GCM encryption of stored secrets, older plain values, a wrong key or changed data, a missing key |
+| `ProductionChecksTest` | Production mode refusing codes in the log and an insecure cookie |
+| `TotpAuthenticatorTest` | Authenticator codes against the RFC 6238 test values, one step of clock drift, used and wrong codes, Base32 secrets |
+| `SocialLoginServiceTest` | Google and Apple sign-in: new accounts, linking by verified email, unverified sign-ups |
+| `StrongPasswordValidatorTest` | The password policy |
+| `BillingCycleTest` | Billing-date arithmetic for weekly, monthly, quarterly and yearly cycles, including month ends |
+| `SubscriptionReminderTest` | When a renewal needs a reminder, and that it is sent once |
+| `RateLimitFilterTest` | A bucket per client, `429` once it is empty, the first matching rule, paths without a rule |
+| `CachingExchangeRateProviderTest` | Cached rates, refresh after expiry, falling back when the rate service is down |
+
+| Frontend test | Covers |
+|---|---|
+| `client.test.ts` | The access token header, renewing an expired session once and repeating the request, one shared refresh, error answers |
+| `queries.test.tsx` | Deleting before the server answers and putting the card back if it refuses, create and update, refreshing the totals |
+| `SubscriptionForm.test.tsx` | Popular-service presets, the request that is sent, editing, server field errors, closing with Escape |
+| `LoginPage.test.tsx` | Sign-in, the two-factor step, an expired challenge, a locked account, unverified accounts |
+| `format.test.ts`, `password.test.ts`, `errors.test.ts` | Dates and relative days, the password rules and phone format, error messages |
+
+CI runs a gitleaks secret scan, both test suites and a Docker Compose smoke test on every push and pull request, with actions pinned to commits and a read-only token.
 
 ## Configuration
 
@@ -225,6 +272,19 @@ Errors always have the same shape:
 { "status": 400, "code": "VALIDATION_FAILED", "message": "Some fields are invalid",
   "fieldErrors": { "amount": "must be greater than or equal to 0.00" }, "timestamp": "..." }
 ```
+
+## Design decisions
+
+- **State lives in the entities.** Entities have no setters. Changes go through methods that keep them valid, such as `User.changePassword()`, which also ends every session and lifts a sign-in lock, or `Subscription.markReminderSent()`.
+- **One monthly figure.** Each subscription keeps its own amount, currency and billing cycle (`BigDecimal`, `numeric(12, 2)`). `BillingCycle` turns any cycle into a monthly cost, and `CurrencyConverter` turns it into the user's default currency, so totals compare like with like.
+- **Charges are projected, not averaged.** The 12-month chart and the calendar come from each subscription's actual renewal dates, so a yearly charge shows up in its month instead of being spread thin.
+- **Exchange rates never block a page.** `CachingExchangeRateProvider` wraps the live provider: rates are cached for 12 hours, a stale value is served if the rate service is down, and a built-in table covers the first start without network.
+- **Reminders are sent once.** The daily job records the renewal it reminded about in `last_reminder_for`, so a restart or a second run the same day sends nothing twice, and a failed send is retried on the next run.
+- **Time is injected.** Services take a `Clock`, so deadlines, lockouts and cooldowns are tested with a clock the tests can move (`MutableClock`) instead of waiting.
+- **The schema is owned by migrations.** Flyway applies versioned SQL files and Hibernate only validates against them (`ddl-auto: validate`), so the database never changes by surprise.
+- **One origin, no CORS.** nginx serves the React bundle and proxies `/api`, and the Vite dev server does the same, so the refresh cookie can be `SameSite=Strict` and no cross-origin rules exist to get wrong.
+- **Server data is cached in the browser, not copied into state.** TanStack Query holds what the API returned. Saving or deleting a subscription updates the list at once and marks the dashboard and calendar as out of date; a delete that the server refuses is put back.
+- **Secrets stay out of the repo.** Configuration comes from a git-ignored `.env`. A pre-commit hook (`git config core.hooksPath scripts/git-hooks`) blocks secret files, key-like strings and any value from `.env`, and CI scans every push with gitleaks.
 
 ## Security
 
