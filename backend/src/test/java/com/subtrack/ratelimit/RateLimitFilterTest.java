@@ -48,6 +48,21 @@ class RateLimitFilterTest {
 	}
 
 	@Test
+	void rulesWithTheSameNameShareOneBucket() throws Exception {
+		RateLimitFilter emailing = new RateLimitFilter(new InMemoryRateLimiter(),
+				List.of(new RateLimitRule("emailed-codes", "/api/auth/register", 2, Duration.ofHours(1)),
+						new RateLimitRule("emailed-codes", "/api/auth/forgot-password", 2, Duration.ofHours(1))),
+				new ApiErrorWriter(JsonMapper.builder().build()));
+
+		assertThat(call(emailing, "/api/auth/register", "1.1.1.1").getStatus()).isEqualTo(200);
+		assertThat(call(emailing, "/api/auth/forgot-password", "1.1.1.1").getStatus()).isEqualTo(200);
+
+		assertThat(call(emailing, "/api/auth/register", "1.1.1.1").getStatus()).isEqualTo(429);
+		assertThat(call(emailing, "/api/auth/forgot-password", "1.1.1.1").getStatus()).isEqualTo(429);
+		assertThat(call(emailing, "/api/auth/forgot-password", "2.2.2.2").getStatus()).isEqualTo(200);
+	}
+
+	@Test
 	void pathsWithoutARuleAreNotLimited() throws Exception {
 		for (int i = 0; i < 20; i++) {
 			assertThat(call("/actuator/health", "1.1.1.1").getStatus()).isEqualTo(200);
@@ -55,6 +70,10 @@ class RateLimitFilterTest {
 	}
 
 	private MockHttpServletResponse call(String path, String ip) throws Exception {
+		return call(filter, path, ip);
+	}
+
+	private static MockHttpServletResponse call(RateLimitFilter filter, String path, String ip) throws Exception {
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", path);
 		request.setRemoteAddr(ip);
 		MockHttpServletResponse response = new MockHttpServletResponse();

@@ -8,6 +8,7 @@ app:
     encryption-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
   verification:
     global-codes-per-hour: 100000
+    global-unverified-codes-per-hour: 100000
   jwt:
     secret: test-secret-test-secret-test-secret-0123456789
   mail:

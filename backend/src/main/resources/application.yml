@@ -51,6 +51,9 @@ app:
     # Emails cost sending reputation, so codes are capped per account and for the whole app.
     codes-per-day: 5
     global-codes-per-hour: 100
+    # Codes for addresses that are not confirmed yet. Kept apart, so sign-ups with made-up
+    # addresses cannot use up the codes of real accounts.
+    global-unverified-codes-per-hour: 50
     # A sign-up that was never verified is deleted after this long.
     unverified-account-ttl: 48h
   login:
@@ -80,6 +83,20 @@ app:
     enabled: true
     # First matching rule wins, so list the strictest prefixes first.
     rules:
+      # These requests send an email, so one address gets few of them. Rules with the same
+      # name share one bucket per client.
+      - name: emailed-codes
+        path-prefix: /api/auth/register
+        capacity: 10
+        window: 1h
+      - name: emailed-codes
+        path-prefix: /api/auth/resend-verification
+        capacity: 10
+        window: 1h
+      - name: emailed-codes
+        path-prefix: /api/auth/forgot-password
+        capacity: 10
+        window: 1h
       - name: auth
         path-prefix: /api/auth/
         capacity: 10

@@ -35,6 +35,12 @@ public class VerificationService {
 
 	private final RateLimitRule globalIssueLimit;
 
+	/**
+	 * Anyone can sign up with any address, so codes for addresses nobody has confirmed yet have a
+	 * budget of their own and cannot use up the one for confirmed accounts.
+	 */
+	private final RateLimitRule globalUnverifiedIssueLimit;
+
 	public VerificationService(VerificationCodeRepository codes, CodeGenerator codeGenerator,
 			PasswordEncoder passwordEncoder, AppProperties properties, Clock clock, RateLimiter rateLimiter) {
 		this.codes = codes;
@@ -47,6 +53,8 @@ public class VerificationService {
 		this.issueLimit = new RateLimitRule("code-issue", "/", config.codesPerDay(), Duration.ofDays(1));
 		this.globalIssueLimit = new RateLimitRule("code-issue-global", "/", config.globalCodesPerHour(),
 				Duration.ofHours(1));
+		this.globalUnverifiedIssueLimit = new RateLimitRule("code-issue-global-unverified", "/",
+				config.globalUnverifiedCodesPerHour(), Duration.ofHours(1));
 	}
 
 	public Optional<String> issueCode(User user, CodePurpose purpose) {
@@ -65,8 +73,9 @@ public class VerificationService {
 		if (latest.isPresent() && now.isBefore(latest.get().getCreatedAt().plus(config.resendCooldown()))) {
 			return Optional.empty();
 		}
+		RateLimitRule globalLimit = user.isEmailVerified() ? globalIssueLimit : globalUnverifiedIssueLimit;
 		if (!rateLimiter.tryConsume(user.getId().toString(), issueLimit).allowed()
-				|| !rateLimiter.tryConsume("all", globalIssueLimit).allowed()) {
+				|| !rateLimiter.tryConsume("all", globalLimit).allowed()) {
 			return Optional.empty();
 		}
 		codes.deleteByUserIdAndPurpose(user.getId(), purpose);

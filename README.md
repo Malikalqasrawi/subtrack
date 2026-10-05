@@ -124,7 +124,7 @@ npx expo start --android --port 8082
 
 Port 8082 is used because the backend container already holds 8081, the Expo default.
 
-`EXPO_PUBLIC_API_URL` in `.env` is where the app finds the API. The default, `http://10.0.2.2:3000`, is how an Android emulator reaches the computer it runs on. For a real phone, set it to your computer's address on the same Wi-Fi, for example `http://192.168.1.20:3000`.
+`EXPO_PUBLIC_API_URL` in `.env` is where the app finds the API. The default, `http://10.0.2.2:3000`, is how an Android emulator reaches the computer it runs on. For a real phone, set it to your computer's address on the same Wi-Fi, for example `http://192.168.1.20:3000`, and set `APP_BIND=0.0.0.0` in the root `.env`: by default the app answers on your own machine only.
 
 The app has sign-in with the two-factor step, sign-up with email verification, password reset, the dashboard with charts, subscriptions with search, filters and sorting, a details screen, the calendar and account settings. It follows the phone's light or dark setting, or the one chosen under Settings → Appearance. Known services such as Netflix or Spotify get their logo ([Simple Icons](https://simpleicons.org), CC0), matched by name.
 
@@ -213,7 +213,7 @@ cd frontend && npm run lint && npm test && npm run build
 cd mobile && npm run lint && npm run typecheck && npm test
 ```
 
-101 backend tests, 38 frontend tests and 213 mobile tests. They need no Docker, PostgreSQL, mail server, Google account or network: the backend runs against an in-memory H2 database in PostgreSQL mode, and the frontend and mobile tests replace the API.
+107 backend tests, 38 frontend tests and 213 mobile tests. They need no Docker, PostgreSQL, mail server, Google account or network: the backend runs against an in-memory H2 database in PostgreSQL mode, and the frontend and mobile tests replace the API.
 
 | Backend test | Covers |
 |---|---|
@@ -229,7 +229,9 @@ cd mobile && npm run lint && npm run typecheck && npm test
 | `EmailOutboxTest` | An email from hand-over to the mail server: sent after commit, nothing sent after a rollback, encrypted while it waits, retried with growing waits, given up on after the fifth attempt, old ones deleted |
 | `EmailLayoutTest` | The HTML version of an email: the code box, the inbox preview, text from a user escaped |
 | `SmtpMailTransportTest` | Every email carries a plain-text and an HTML version |
-| `RateLimitFilterTest` | A bucket per client, `429` once it is empty, the first matching rule, paths without a rule |
+| `RateLimitFilterTest` | A bucket per client, `429` once it is empty, the first matching rule, rules that share a bucket, paths without a rule |
+| `ShippedRateLimitRulesTest` | The rules in `application.yml`: every request that sends an email falls under the hourly limit |
+| `EmailedCodeBudgetTest` | Sign-ups with unconfirmed addresses cannot use up the codes of confirmed accounts |
 | `CachingExchangeRateProviderTest` | Cached rates, refresh after expiry, falling back when the rate service is down |
 
 | Frontend test | Covers |
@@ -266,6 +268,7 @@ All settings are environment variables read by the backend. Defaults live in `ba
 | `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_SMTP_AUTH`, `MAIL_SMTP_STARTTLS` | Mailpit on `localhost:1025` | SMTP server |
 | `MAIL_FROM` | `Subtrack <no-reply@subtrack.local>` | Sender address |
 | `COOKIE_SECURE` | `false` | Set to `true` when serving over HTTPS |
+| `APP_BIND` | `127.0.0.1` | Read by Docker Compose: the address port 3000 is published on. `0.0.0.0` opens the app to the network |
 | `EXCHANGE_RATES_PROVIDER` | `remote` | `remote` fetches live rates, `fixed` uses the built-in table only |
 | `GOOGLE_CLIENT_ID`, `APPLE_CLIENT_ID` | empty | Switch on sign-in with Google / Apple |
 
@@ -366,7 +369,7 @@ Errors always have the same shape:
 - **Passwords** must be 8 to 72 characters with a letter, a number and a special character, and are hashed with BCrypt. Verification codes are hashed too.
 - **Forgotten passwords** are reset with an emailed 6-digit code under the same expiry and attempt limits. A reset signs the account out everywhere.
 - **Lockouts that cannot be used against the owner**: 5 wrong passwords or two-factor codes within 15 minutes lock the account only for the network address they came from, so the owner can still sign in from anywhere else. 30 wrong attempts in a row from any addresses lock it everywhere. Entering the password again does not reset the count for the code step, and a password reset lifts every lock. The answer is `429 ACCOUNT_LOCKED`.
-- **Limits on emailed codes**: 10 attempts per hour for each kind of code (asking for a new code does not reset the count), 5 codes a day per account and 100 an hour for the whole app, so a bot cannot use up the sending limit.
+- **Limits on emailed codes**: 10 attempts per hour for each kind of code (asking for a new code does not reset the count), 5 codes a day per account, and 10 requests an hour per network address for the three requests that send one (sign-up, resend, forgotten password). The whole app sends at most 100 codes an hour to confirmed accounts and 50 to addresses nobody has confirmed yet, so sign-ups with made-up addresses cannot use up the codes of real accounts or the mail provider's sending limit.
 - **A copy of the database is not enough**: emailed codes and refresh tokens are stored as hashes, and two-factor secrets are encrypted with AES-256-GCM using `ENCRYPTION_KEY`, which never touches the database. Secrets saved before that are encrypted at startup. An email waiting in the outbox is encrypted the same way, because it can hold a code, and its text is erased once it is sent.
 - **Nobody can hold on to someone else's email**: a sign-up that was never verified is replaced by a newer one for the same address, and deleted after 48 hours. Names are letters only, so they cannot carry a link.
 - **Security alerts**: an email is sent when the password, the email address (to the old address) or two-factor authentication changes.
@@ -377,7 +380,7 @@ Errors always have the same shape:
 - **Emails to unconfirmed addresses** carry no text chosen by the person who signed up, so the app cannot be used to send someone else a message.
 - **Browser headers**: a Content-Security-Policy that only allows the app's own scripts plus the Google and Apple sign-in SDKs, and `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` and `Strict-Transport-Security` on every response including static assets.
 - **Sessions**: a 15-minute JWT access token held only in browser memory, plus a 14-day refresh token in an `HttpOnly`, `SameSite=Strict` cookie scoped to `/api/auth`. Refresh tokens are stored hashed, are single-use, and are rotated on every refresh. Reusing an old one ends all of that user's sessions. Every access token carries the user's token version: changing or resetting the password, "Sign out of all devices" and deleting the account make every earlier token stop working at once, without a blocklist.
-- **Rate limiting** per client IP with a token bucket: 10 requests per minute on `/api/auth/*`, 120 per minute on the rest of the API. Over the limit, the API answers `429` with a `Retry-After` header.
+- **Rate limiting** per client IP with a token bucket: 10 requests per minute on `/api/auth/*`, 10 per hour on the requests that send an email, 120 per minute on the rest of the API. Over the limit, the API answers `429` with a `Retry-After` header.
 - **Data isolation**: every subscription query filters by the signed-in user's id, so another user's id returns `404`.
 - **Input validation** on every request body, and JPA parameter binding throughout, so there is no string-built SQL.
 
