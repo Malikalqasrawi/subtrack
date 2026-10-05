@@ -12,7 +12,10 @@ import { PasswordField } from '@/components/password-field';
 import { TextField } from '@/components/text-field';
 import { TextLink } from '@/components/text-link';
 import { Spacing } from '@/constants/theme';
+import { useCooldown } from '@/hooks/use-cooldown';
 import { isStrongPassword } from '@/lib/password';
+
+const RESEND_COOLDOWN_SECONDS = 60;
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
@@ -21,8 +24,11 @@ export default function ForgotPasswordScreen() {
   const [codeSent, setCodeSent] = useState(false);
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
+  const [cooldown, restartCooldown] = useCooldown(RESEND_COOLDOWN_SECONDS);
 
   const canRequestCode = email.trim() !== '';
 
@@ -33,6 +39,7 @@ export default function ForgotPasswordScreen() {
     try {
       await authApi.forgotPassword(email.trim());
       setCodeSent(true);
+      restartCooldown();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not send the code');
     } finally {
@@ -40,9 +47,22 @@ export default function ForgotPasswordScreen() {
     }
   }
 
+  async function resend() {
+    setError(undefined);
+    setNotice(undefined);
+    try {
+      await authApi.forgotPassword(email.trim());
+      setNotice('A new code is on its way.');
+      restartCooldown();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not resend the code');
+    }
+  }
+
   async function reset() {
     setSubmitting(true);
     setError(undefined);
+    setNotice(undefined);
     try {
       await authApi.resetPassword(email.trim(), code, password);
       router.dismissTo({ pathname: '/sign-in', params: { passwordChanged: '1' } });
@@ -84,13 +104,24 @@ export default function ForgotPasswordScreen() {
       subtitle={`If ${email.trim()} has an account, a 6-digit code is on its way. Enter it below.`}>
       <CodeField value={code} onChange={setCode} />
       <PasswordField label="New password" value={password} onChange={setPassword} autoComplete="new-password" showRules />
+      <PasswordField
+        label="Confirm new password"
+        value={confirm}
+        onChange={setConfirm}
+        autoComplete="new-password"
+        error={confirm !== '' && confirm !== password ? 'The passwords do not match' : undefined}
+      />
       {error && <Banner message={error} />}
+      {notice && <Banner tone="success" message={notice} />}
       <Button
         label="Change password"
         onPress={reset}
         busy={submitting}
-        disabled={code.length !== CODE_LENGTH || !isStrongPassword(password)}
+        disabled={code.length !== CODE_LENGTH || !isStrongPassword(password) || confirm !== password}
       />
+      <View style={styles.resend}>
+        <TextLink label={cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'} onPress={resend} disabled={cooldown > 0} />
+      </View>
       <View style={styles.links}>
         <TextLink
           label="Use a different email"
@@ -98,6 +129,7 @@ export default function ForgotPasswordScreen() {
             setCodeSent(false);
             setCode('');
             setError(undefined);
+            setNotice(undefined);
           }}
         />
         {backToSignIn}
@@ -107,6 +139,9 @@ export default function ForgotPasswordScreen() {
 }
 
 const styles = StyleSheet.create({
+  resend: {
+    alignItems: 'center',
+  },
   links: {
     flexDirection: 'row',
     justifyContent: 'space-between',

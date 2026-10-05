@@ -24,6 +24,7 @@ async function fillIn(phone: string) {
   await userEvent.type(screen.getByLabelText('Email'), ' demo@subtrack.example ');
   await userEvent.type(screen.getByLabelText('Phone number'), phone);
   await userEvent.type(screen.getByLabelText('Password'), PASSWORD);
+  await userEvent.type(screen.getByLabelText('Confirm password'), PASSWORD);
 }
 
 beforeEach(() => {
@@ -38,6 +39,7 @@ describe('RegisterScreen', () => {
     await userEvent.type(screen.getByLabelText('Email'), 'demo@subtrack.example');
     await userEvent.type(screen.getByLabelText('Phone number'), '+962791234567');
     await userEvent.type(screen.getByLabelText('Password'), 'weakpass');
+    await userEvent.type(screen.getByLabelText('Confirm password'), 'weakpass');
 
     expect(screen.getByRole('button', { name: 'Create account' })).toBeDisabled();
     expect(screen.getByLabelText('A number: not met')).toBeOnTheScreen();
@@ -61,6 +63,7 @@ describe('RegisterScreen', () => {
     await userEvent.type(screen.getByLabelText('Email'), 'demo@subtrack');
     await userEvent.type(screen.getByLabelText('Phone number'), '+962791234567');
     await userEvent.type(screen.getByLabelText('Password'), PASSWORD);
+    await userEvent.type(screen.getByLabelText('Confirm password'), PASSWORD);
     await userEvent.press(screen.getByRole('button', { name: 'Create account' }));
 
     expect(screen.getByText('Enter a full email address, like name@example.com')).toBeOnTheScreen();
@@ -88,6 +91,15 @@ describe('RegisterScreen', () => {
     expect(await screen.findByText('can only contain letters, spaces, apostrophes and hyphens')).toBeOnTheScreen();
     expect(mockRouter.push).not.toHaveBeenCalled();
     expect(pendingVerification.get()).toBeNull();
+  });
+
+  it('keeps the button off while the two passwords differ', async () => {
+    await renderScreen(<RegisterScreen />);
+    await fillIn('+962791234567');
+    await userEvent.type(screen.getByLabelText('Confirm password'), 'x');
+
+    expect(screen.getByText('The passwords do not match')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Create account' })).toBeDisabled();
   });
 
   it('starts the session for an account created with Google', async () => {

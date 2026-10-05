@@ -14,6 +14,7 @@ export function PasswordSection() {
   const { replaceSession } = useSession();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [result, setResult] = useState<BannerProps>();
   const [saving, setSaving] = useState(false);
 
@@ -26,6 +27,7 @@ export function PasswordSection() {
       setResult({ tone: 'success', message: user.hasPassword ? 'Password changed' : 'Password set' });
       setCurrent('');
       setNext('');
+      setConfirm('');
     } catch (err) {
       setResult({ message: errorMessage(err, 'Could not change the password') });
     } finally {
@@ -45,12 +47,19 @@ export function PasswordSection() {
         <PasswordField label="Current password" value={current} onChange={setCurrent} autoComplete="current-password" />
       )}
       <PasswordField label="New password" value={next} onChange={setNext} autoComplete="new-password" showRules />
+      <PasswordField
+        label="Confirm new password"
+        value={confirm}
+        onChange={setConfirm}
+        autoComplete="new-password"
+        error={confirm !== '' && confirm !== next ? 'The passwords do not match' : undefined}
+      />
       {result && <Banner {...result} />}
       <Button
         label={user.hasPassword ? 'Change password' : 'Set password'}
         onPress={save}
         busy={saving}
-        disabled={!isStrongPassword(next) || (user.hasPassword && current === '')}
+        disabled={!isStrongPassword(next) || confirm !== next || (user.hasPassword && current === '')}
       />
     </SettingsSection>
   );

@@ -107,7 +107,7 @@ export default function SubscriptionForm({ subscription, currencies, defaultCurr
         </Field>
         <div className="form-row">
           <Field label="Price" error={fieldErrors.amount}>
-            <input type="number" min="0" step="0.01" value={form.amount} onChange={set('amount')} placeholder="9.99" required />
+            <input type="number" min="0" step="any" value={form.amount} onChange={set('amount')} placeholder="9.99" required />
           </Field>
           <Field label="Currency" error={fieldErrors.currency}>
             <select value={form.currency} onChange={set('currency')}>

@@ -8,6 +8,7 @@ import { ApiError } from '@/api/client';
 import { currencyApi, userApi } from '@/api/endpoints';
 import type { Session } from '@/api/types';
 import SettingsScreen from '@/app/(tabs)/settings';
+import SettingsSectionScreen from '@/app/settings/[section]';
 import { AppearanceProvider } from '@/appearance/appearance-context';
 import { AppearanceSection } from '@/components/settings/appearance-section';
 import { PasswordSection } from '@/components/settings/password-section';
@@ -17,9 +18,16 @@ import { user } from '@/test/fixtures';
 import { renderScreen } from '@/test/render-screen';
 
 const mockUser = jest.fn();
+const mockRouter = { push: jest.fn(), back: jest.fn() };
+const mockParams = jest.fn();
 const mockSession = { updateUser: jest.fn(), replaceSession: jest.fn(), signOut: jest.fn(), clearSession: jest.fn() };
 
 jest.mock('@/api/endpoints');
+jest.mock('expo-router', () => ({
+  useRouter: () => mockRouter,
+  useLocalSearchParams: () => mockParams(),
+  Redirect: () => null,
+}));
 jest.mock('@/session/session-context', () => ({ useCurrentUser: () => mockUser(), useSession: () => mockSession }));
 
 const NEW_PASSWORD = 'Subtrack#2027';
@@ -43,13 +51,43 @@ beforeEach(() => {
   jest.mocked(currencyApi.list).mockResolvedValue(CURRENCIES);
 });
 
-describe('the settings screen', () => {
-  it('has a section for every part of the account', async () => {
+describe('the settings menu', () => {
+  it('lists every part of the account with its current state', async () => {
+    mockUser.mockReturnValue(user({ twoFactorEnabled: true }));
     await renderSettings(<SettingsScreen />);
 
-    for (const title of ['Profile', 'Appearance', 'Email address', 'Change password', 'Two-factor authentication', 'Sessions', 'Delete account']) {
-      expect(screen.getByRole('header', { name: title })).toBeOnTheScreen();
+    for (const label of ['Profile', 'Appearance', 'Email address', 'Password', 'Sign out', 'Delete account']) {
+      expect(screen.getByRole('button', { name: new RegExp(`^${label},`) })).toBeOnTheScreen();
     }
+    expect(screen.getByRole('button', { name: 'Two-factor authentication, On' })).toBeOnTheScreen();
+  });
+
+  it('opens a section on its own screen', async () => {
+    await renderSettings(<SettingsScreen />);
+
+    await userEvent.press(screen.getByRole('button', { name: /^Password,/ }));
+
+    expect(mockRouter.push).toHaveBeenCalledWith({ pathname: '/settings/[section]', params: { section: 'password' } });
+  });
+});
+
+describe('a settings screen', () => {
+  it('shows the one section it was opened for and goes back', async () => {
+    mockParams.mockReturnValue({ section: 'password' });
+    await renderSettings(<SettingsSectionScreen />);
+
+    expect(screen.getByRole('header', { name: 'Change password' })).toBeOnTheScreen();
+    expect(screen.queryByRole('header', { name: 'Profile' })).not.toBeOnTheScreen();
+
+    await userEvent.press(screen.getByRole('button', { name: 'Back' }));
+    expect(mockRouter.back).toHaveBeenCalled();
+  });
+
+  it('shows nothing for an address that is not a section', async () => {
+    mockParams.mockReturnValue({ section: 'nothing-here' });
+    await renderSettings(<SettingsSectionScreen />);
+
+    expect(screen.queryByRole('header')).not.toBeOnTheScreen();
   });
 });
 
@@ -132,6 +170,7 @@ describe('password', () => {
 
     await userEvent.type(screen.getByLabelText('Current password'), 'Subtrack#2026');
     await userEvent.type(screen.getByLabelText('New password'), NEW_PASSWORD);
+    await userEvent.type(screen.getByLabelText('Confirm new password'), NEW_PASSWORD);
     await userEvent.press(screen.getByRole('button', { name: 'Change password' }));
 
     expect(userApi.changePassword).toHaveBeenCalledWith('Subtrack#2026', NEW_PASSWORD);
@@ -147,6 +186,7 @@ describe('password', () => {
 
     await userEvent.type(screen.getByLabelText('Current password'), 'not-my-password');
     await userEvent.type(screen.getByLabelText('New password'), NEW_PASSWORD);
+    await userEvent.type(screen.getByLabelText('Confirm new password'), NEW_PASSWORD);
     await userEvent.press(screen.getByRole('button', { name: 'Change password' }));
 
     expect(await screen.findByText('Your current password is incorrect')).toBeOnTheScreen();
@@ -158,6 +198,8 @@ describe('password', () => {
     const button = () => screen.getByRole('button', { name: 'Change password' });
 
     await userEvent.type(screen.getByLabelText('New password'), NEW_PASSWORD);
+
+    await userEvent.type(screen.getByLabelText('Confirm new password'), NEW_PASSWORD);
     expect(button()).toBeDisabled();
 
     await userEvent.type(screen.getByLabelText('Current password'), 'Subtrack#2026');
@@ -165,7 +207,19 @@ describe('password', () => {
 
     await userEvent.clear(screen.getByLabelText('New password'));
     await userEvent.type(screen.getByLabelText('New password'), 'weakpass');
+    await userEvent.type(screen.getByLabelText('Confirm new password'), 'weakpass');
     expect(button()).toBeDisabled();
+  });
+
+  it('keeps the button off while the two new passwords differ', async () => {
+    await renderSettings(<PasswordSection />);
+
+    await userEvent.type(screen.getByLabelText('Current password'), 'Subtrack#2026');
+    await userEvent.type(screen.getByLabelText('New password'), NEW_PASSWORD);
+    await userEvent.type(screen.getByLabelText('Confirm new password'), 'Something#else1');
+
+    expect(screen.getByText('The passwords do not match')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Change password' })).toBeDisabled();
   });
 
   it('lets an account that signed up with Google set its first password', async () => {
@@ -177,6 +231,8 @@ describe('password', () => {
     expect(screen.queryByLabelText('Current password')).not.toBeOnTheScreen();
 
     await userEvent.type(screen.getByLabelText('New password'), NEW_PASSWORD);
+
+    await userEvent.type(screen.getByLabelText('Confirm new password'), NEW_PASSWORD);
     await userEvent.press(screen.getByRole('button', { name: 'Set password' }));
 
     expect(userApi.changePassword).toHaveBeenCalledWith('', NEW_PASSWORD);
