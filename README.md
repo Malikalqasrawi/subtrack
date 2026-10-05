@@ -1,11 +1,12 @@
 # Subtrack
 
-A web app for keeping track of your subscriptions: what you pay for, how much it costs per month and per year, and when each one renews.
+An Android and iOS app, with a website on the same API, for keeping track of your subscriptions: what you pay for, how much it costs per month and per year, and when each one renews.
 
 [![CI](https://github.com/Malikalqasrawi/subtrack/actions/workflows/ci.yml/badge.svg)](https://github.com/Malikalqasrawi/subtrack/actions/workflows/ci.yml)
 ![Java](https://img.shields.io/badge/Java-21-E76F00?logo=openjdk&logoColor=white)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4-6DB33F?logo=springboot&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![React Native](https://img.shields.io/badge/React%20Native-Expo%2057-000020?logo=expo&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-compose-2496ED?logo=docker&logoColor=white)
@@ -31,12 +32,25 @@ Subscriptions are easy to start and easy to forget. The charges are small, they 
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 19, TypeScript, Vite, React Router, TanStack Query, Motion, Recharts |
+| Mobile app | React Native 0.86, Expo 57, TypeScript, Expo Router, TanStack Query |
+| Website | React 19, TypeScript, Vite, React Router, TanStack Query, Motion, Recharts |
 | Backend | Java 21, Spring Boot 4 (Web MVC, Security, Data JPA, Validation, Mail) |
 | Database | PostgreSQL 17, schema managed by Flyway |
 | Packaging | Docker Compose (nginx, backend, PostgreSQL, Mailpit) |
 
 ## Screenshots
+
+### Mobile app
+
+| Dashboard | Spending | Subscriptions |
+|---|---|---|
+| <img src="docs/screenshots/app-dashboard.png" width="250" alt="App dashboard"> | <img src="docs/screenshots/app-insights.png" width="250" alt="Spend by category and the next 12 months"> | <img src="docs/screenshots/app-subscriptions.png" width="250" alt="App subscriptions list"> |
+
+| Subscription details | Calendar | Light mode |
+|---|---|---|
+| <img src="docs/screenshots/app-subscription-details.png" width="250" alt="Subscription details"> | <img src="docs/screenshots/app-calendar.png" width="250" alt="App calendar"> | <img src="docs/screenshots/app-dashboard-light.png" width="250" alt="App dashboard in light mode"> |
+
+### Website
 
 | Dashboard | Subscriptions | Add subscription |
 |---|---|---|
@@ -52,7 +66,15 @@ Subscriptions are easy to start and easy to forget. The charges are small, they 
 subtrack/
 ├── backend/               Spring Boot API
 │   └── src/main/java/com/subtrack/   one package per feature (see Backend packages)
-├── frontend/              React app
+├── mobile/                React Native app (Expo)
+│   └── src/
+│       ├── api/           fetch client, endpoints, types
+│       ├── app/           one file per screen (Expo Router)
+│       ├── appearance/    light, dark or the phone's own setting
+│       ├── components/    shared UI, charts, the settings sections
+│       ├── lib/           data hooks (TanStack Query), formatting, service logos
+│       └── session/       the signed-in user and stored tokens
+├── frontend/              React website
 │   └── src/
 │       ├── api/           fetch client, endpoints, types
 │       ├── auth/          session context
@@ -87,6 +109,44 @@ docker compose up --build
 Create an account, then open Mailpit to read the verification code.
 
 To send real email instead, set the `MAIL_*` variables in `.env` to your SMTP provider (see `.env.example`).
+
+## Mobile app
+
+The app talks to the same API as the website, so start the Docker stack first. You need Node 22 and an Android emulator or a phone with [Expo Go](https://expo.dev/go).
+
+```bash
+docker compose up -d
+cd mobile
+npm install
+cp .env.example .env
+npx expo start --android --port 8082
+```
+
+Port 8082 is used because the backend container already holds 8081, the Expo default.
+
+`EXPO_PUBLIC_API_URL` in `.env` is where the app finds the API. The default, `http://10.0.2.2:3000`, is how an Android emulator reaches the computer it runs on. For a real phone, set it to your computer's address on the same Wi-Fi, for example `http://192.168.1.20:3000`.
+
+The app has sign-in with the two-factor step, sign-up with email verification, password reset, the dashboard with charts, subscriptions with search, filters and sorting, a details screen, the calendar and account settings. It follows the phone's light or dark setting, or the one chosen under Settings → Appearance. Known services such as Netflix or Spotify get their logo ([Simple Icons](https://simpleicons.org), CC0), matched by name.
+
+### Google sign-in in the app
+
+Google sign-in uses native code, so it does not work in Expo Go: the button answers that it needs the installed app. To try it, build the app once (needs JDK 17 or 21 and the Android SDK):
+
+```bash
+cd mobile
+npx expo run:android --port 8082
+```
+
+It also needs two OAuth clients in the same Google Cloud project:
+
+1. The **Web application** client from [Sign in with Google and Apple](#sign-in-with-google-and-apple). Put its client id in `mobile/.env` as `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, the same value as `GOOGLE_CLIENT_ID` in the root `.env`.
+2. An **Android** client with the package name `com.malik.subtrack` and the SHA-1 fingerprint of the key the build is signed with. For a debug build:
+
+```bash
+keytool -list -v -keystore mobile/android/app/debug.keystore -storepass android
+```
+
+The Android client's id is not used anywhere. It only has to exist, so Google accepts requests from this app. The app receives an ID token issued for the web client and sends it to `POST /api/auth/google`, the same endpoint the website uses.
 
 ## Sign in with Google and Apple
 
@@ -150,9 +210,10 @@ Because of that proxy the browser sees a single origin, exactly as it does behin
 ```bash
 cd backend && ./mvnw test
 cd frontend && npm run lint && npm test && npm run build
+cd mobile && npm run lint && npm run typecheck && npm test
 ```
 
-101 backend tests and 38 frontend tests. They need no Docker, PostgreSQL, mail server, Google account or network: the backend runs against an in-memory H2 database in PostgreSQL mode, and the frontend tests replace the API.
+101 backend tests, 38 frontend tests and 203 mobile tests. They need no Docker, PostgreSQL, mail server, Google account or network: the backend runs against an in-memory H2 database in PostgreSQL mode, and the frontend and mobile tests replace the API.
 
 | Backend test | Covers |
 |---|---|
@@ -179,7 +240,17 @@ cd frontend && npm run lint && npm test && npm run build
 | `LoginPage.test.tsx` | Sign-in, the two-factor step, an expired challenge, a locked account, unverified accounts |
 | `format.test.ts`, `password.test.ts`, `errors.test.ts` | Dates and relative days, the password rules and phone format, error messages |
 
-CI runs a gitleaks secret scan, both test suites and a Docker Compose smoke test on every push and pull request, with actions pinned to commits and a read-only token.
+| Mobile test | Covers |
+|---|---|
+| `*-screen.test.tsx`, `settings-security.test.tsx` | Each screen against a replaced API: sign-in with the two-factor step, sign-up, verification, password reset, dashboard, subscriptions list and details, calendar, settings |
+| `subscription-form.test.tsx`, `subscription-form.test.ts` | The add and edit form, the request that is sent, field errors |
+| `google-sign-in.test.ts` | The ID token from Google's account picker, a closed picker, a missing client id, missing Play services |
+| `session-context.test.tsx` | Stored sessions, sign-in, sign-out, a session that has ended |
+| `appearance-*.test.ts(x)` | The saved theme choice and following the phone |
+| `subscription-list.test.ts`, `calendar.test.ts`, `charts.test.ts`, `brands.test.ts` | Search, filter and sort, month grids, chart geometry, matching a name to a logo |
+| `format.test.ts`, `password.test.ts`, `email.test.ts`, `errors.test.ts` | Dates and money, the password rules, email format, error messages |
+
+CI runs a gitleaks secret scan, all three test suites and a Docker Compose smoke test on every push and pull request, with actions pinned to commits and a read-only token.
 
 ## Configuration
 
@@ -318,7 +389,7 @@ Before putting this on the internet: serve it over HTTPS, set `COOKIE_SECURE=tru
 - "Today" is the server's UTC date, so a renewal can appear a day early or late for users far from UTC.
 - The per-address sign-in counts live in the backend's memory, like the rate limits, and reset on restart.
 - The phone number is stored but not verified by SMS, which would need a paid SMS provider.
-- Google and Apple sign-in are covered by tests with a stand-in verifier, but have not been run against the real providers, which needs your own client ids.
+- Google sign-in has been run against Google from the Android app, not yet from the website. Apple sign-in is covered by tests with a stand-in verifier only, because the real one needs a paid developer account.
 - Categories are a fixed list.
 
 ## Author
