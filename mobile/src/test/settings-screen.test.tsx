@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, screen, userEvent } from '@testing-library/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { act, screen, userEvent, waitFor } from '@testing-library/react-native';
 import type { ReactElement } from 'react';
 import { Alert } from 'react-native';
 
@@ -7,6 +8,8 @@ import { ApiError } from '@/api/client';
 import { currencyApi, userApi } from '@/api/endpoints';
 import type { Session } from '@/api/types';
 import SettingsScreen from '@/app/(tabs)/settings';
+import { AppearanceProvider } from '@/appearance/appearance-context';
+import { AppearanceSection } from '@/components/settings/appearance-section';
 import { PasswordSection } from '@/components/settings/password-section';
 import { ProfileSection } from '@/components/settings/profile-section';
 import { SessionsSection } from '@/components/settings/sessions-section';
@@ -44,7 +47,7 @@ describe('the settings screen', () => {
   it('has a section for every part of the account', async () => {
     await renderSettings(<SettingsScreen />);
 
-    for (const title of ['Profile', 'Email address', 'Change password', 'Two-factor authentication', 'Sessions', 'Delete account']) {
+    for (const title of ['Profile', 'Appearance', 'Email address', 'Change password', 'Two-factor authentication', 'Sessions', 'Delete account']) {
       expect(screen.getByRole('header', { name: title })).toBeOnTheScreen();
     }
   });
@@ -100,6 +103,23 @@ describe('profile', () => {
     expect(await screen.findByText('can only contain letters, spaces, apostrophes and hyphens')).toBeOnTheScreen();
     expect(mockSession.updateUser).not.toHaveBeenCalled();
     expect(screen.queryByText('Profile saved')).not.toBeOnTheScreen();
+  });
+});
+
+describe('appearance', () => {
+  it('starts on Match system, switches at once and remembers the choice on the phone', async () => {
+    await renderSettings(
+      <AppearanceProvider>
+        <AppearanceSection />
+      </AppearanceProvider>,
+    );
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Match system' })).toBeSelected());
+
+    await userEvent.press(screen.getByRole('radio', { name: 'Dark' }));
+
+    expect(screen.getByRole('radio', { name: 'Dark' })).toBeSelected();
+    expect(screen.getByRole('radio', { name: 'Match system' })).not.toBeSelected();
+    expect(await AsyncStorage.getItem('subtrack.appearance')).toBe('dark');
   });
 });
 

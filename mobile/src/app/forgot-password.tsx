@@ -24,7 +24,10 @@ export default function ForgotPasswordScreen() {
   const [error, setError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
 
+  const canRequestCode = email.trim() !== '';
+
   async function requestCode() {
+    if (!canRequestCode || submitting) return;
     setSubmitting(true);
     setError(undefined);
     try {
@@ -69,7 +72,7 @@ export default function ForgotPasswordScreen() {
           onSubmitEditing={requestCode}
         />
         {error && <Banner message={error} />}
-        <Button label="Send reset code" onPress={requestCode} busy={submitting} disabled={email.trim() === ''} />
+        <Button label="Send reset code" onPress={requestCode} busy={submitting} disabled={!canRequestCode} />
         <View style={styles.links}>{backToSignIn}</View>
       </AuthScreen>
     );

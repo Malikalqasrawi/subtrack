@@ -1,4 +1,4 @@
-import { screen, userEvent } from '@testing-library/react-native';
+import { fireEvent, screen, userEvent } from '@testing-library/react-native';
 
 import { ApiError } from '@/api/client';
 import { authApi } from '@/api/endpoints';
@@ -29,6 +29,15 @@ describe('ForgotPasswordScreen', () => {
 
     expect(authApi.forgotPassword).toHaveBeenCalledWith('demo@subtrack.example');
     expect(screen.getByRole('header', { name: 'Choose a new password' })).toBeOnTheScreen();
+  });
+
+  it('ignores Enter while the email box is empty', async () => {
+    await renderScreen(<ForgotPasswordScreen />);
+
+    await userEvent.clear(screen.getByLabelText('Email'));
+    await fireEvent(screen.getByLabelText('Email'), 'submitEditing');
+
+    expect(authApi.forgotPassword).not.toHaveBeenCalled();
   });
 
   it('says the same thing whether or not the account exists', async () => {

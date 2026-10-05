@@ -1,4 +1,4 @@
-import { screen, userEvent } from '@testing-library/react-native';
+import { fireEvent, screen, userEvent } from '@testing-library/react-native';
 
 import { ApiError } from '@/api/client';
 import { authApi } from '@/api/endpoints';
@@ -39,6 +39,45 @@ describe('SignInScreen', () => {
 
     expect(authApi.login).toHaveBeenCalledWith('demo@subtrack.example', PASSWORD);
     expect(mockSignIn).toHaveBeenCalledWith(expect.objectContaining({ refreshToken: 'refresh' }));
+  });
+
+  it('signs in when Enter is pressed in the password box', async () => {
+    jest.mocked(authApi.login).mockResolvedValue({ ...SESSION, twoFactorRequired: false });
+    await renderScreen(<SignInScreen />);
+
+    await userEvent.type(screen.getByLabelText('Email'), 'demo@subtrack.example');
+    await userEvent.type(screen.getByLabelText('Password'), PASSWORD, { submitEditing: true });
+
+    expect(authApi.login).toHaveBeenCalledWith('demo@subtrack.example', PASSWORD);
+  });
+
+  it('ignores Enter while the email is still empty', async () => {
+    await renderScreen(<SignInScreen />);
+
+    await userEvent.type(screen.getByLabelText('Password'), PASSWORD, { submitEditing: true });
+
+    expect(authApi.login).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).not.toBeOnTheScreen();
+  });
+
+  it('sends one request however often Enter is pressed while it is on its way', async () => {
+    jest.mocked(authApi.login).mockReturnValue(new Promise(() => {}));
+    await renderScreen(<SignInScreen />);
+
+    await userEvent.type(screen.getByLabelText('Email'), 'demo@subtrack.example');
+    await userEvent.type(screen.getByLabelText('Password'), PASSWORD, { submitEditing: true });
+    await fireEvent(screen.getByLabelText('Password'), 'submitEditing');
+
+    expect(authApi.login).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores Enter on the second step until the code is long enough', async () => {
+    jest.mocked(authApi.login).mockResolvedValue({ twoFactorRequired: true, challengeToken: 'challenge' });
+    await signInWith('demo@subtrack.example');
+
+    await userEvent.type(screen.getByLabelText('Code'), '12345', { submitEditing: true });
+
+    expect(authApi.twoFactor).not.toHaveBeenCalled();
   });
 
   it('asks for the second factor before starting the session', async () => {
