@@ -1,5 +1,6 @@
 package com.subtrack.insights;
 
+import com.subtrack.common.RowAccess;
 import com.subtrack.currency.CurrencyConverter;
 import com.subtrack.insights.dto.CalendarMonth;
 import com.subtrack.insights.dto.CategorySpend;
@@ -38,18 +39,22 @@ public class InsightsService {
 
 	private final CurrencyConverter currencyConverter;
 
+	private final RowAccess rowAccess;
+
 	private final Clock clock;
 
 	public InsightsService(SubscriptionRepository subscriptions, UserService userService,
-			CurrencyConverter currencyConverter, Clock clock) {
+			CurrencyConverter currencyConverter, RowAccess rowAccess, Clock clock) {
 		this.subscriptions = subscriptions;
 		this.userService = userService;
 		this.currencyConverter = currencyConverter;
+		this.rowAccess = rowAccess;
 		this.clock = clock;
 	}
 
 	@Transactional(readOnly = true)
 	public DashboardSummary summary(UUID userId) {
+		rowAccess.asUser(userId);
 		String currency = userService.getById(userId).getDefaultCurrency();
 		List<Subscription> active = subscriptions.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE);
 		LocalDate today = LocalDate.now(clock);
@@ -77,6 +82,7 @@ public class InsightsService {
 
 	@Transactional(readOnly = true)
 	public CalendarMonth calendar(UUID userId, YearMonth month) {
+		rowAccess.asUser(userId);
 		String currency = userService.getById(userId).getDefaultCurrency();
 		List<Subscription> active = subscriptions.findByUserIdAndStatus(userId, SubscriptionStatus.ACTIVE);
 		List<RenewalEntry> renewals = renewalsBetween(active, month.atDay(1), month.atEndOfMonth(), currency);
