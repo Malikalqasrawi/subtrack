@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:h2:mem:subtrack;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
-    username: sa
-    password:
+    # The address and the owner's login come from the PostgreSQL that PostgresTest starts.
+    username: subtrack_app
+    password: test-app-password
 app:
   security:
     encryption-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=

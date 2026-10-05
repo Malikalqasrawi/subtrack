@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.subtrack.common.error.BadRequestException;
+import com.subtrack.support.PostgresTest;
 import com.subtrack.user.User;
 import com.subtrack.user.UserRepository;
 import java.util.List;
@@ -13,15 +14,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.ActiveProfiles;
 
 /**
  * Exercises account creation and linking with a stand-in for Google. Real ID tokens cannot be
  * produced in a test, which is exactly why the service depends on an interface.
  */
 @SpringBootTest
-@ActiveProfiles("test")
-class SocialLoginServiceTest {
+class SocialLoginServiceTest extends PostgresTest {
 
 	@Autowired
 	private UserRepository users;
