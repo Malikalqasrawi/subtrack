@@ -3,7 +3,9 @@ import { useState } from 'react';
 import { userApi } from '@/api/endpoints';
 import { Banner, type BannerProps } from '@/components/banner';
 import { Button } from '@/components/button';
+import { CODE_LENGTH } from '@/components/code-field';
 import { PasswordField } from '@/components/password-field';
+import { OwnerCode } from '@/components/settings/owner-code';
 import { SettingsSection } from '@/components/settings/section';
 import { errorMessage } from '@/lib/errors';
 import { isStrongPassword } from '@/lib/password';
@@ -15,6 +17,7 @@ export function PasswordSection() {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [ownerCode, setOwnerCode] = useState('');
   const [result, setResult] = useState<BannerProps>();
   const [saving, setSaving] = useState(false);
 
@@ -23,11 +26,13 @@ export function PasswordSection() {
     setResult(undefined);
     try {
       // The server signs out every other device and hands this one a fresh session.
-      await replaceSession(await userApi.changePassword(current, next));
+      const proof = user.hasPassword ? { currentPassword: current } : { confirmationCode: ownerCode };
+      await replaceSession(await userApi.changePassword(proof, next));
       setResult({ tone: 'success', message: user.hasPassword ? 'Password changed' : 'Password set' });
       setCurrent('');
       setNext('');
       setConfirm('');
+      setOwnerCode('');
     } catch (err) {
       setResult({ message: errorMessage(err, 'Could not change the password') });
     } finally {
@@ -43,8 +48,10 @@ export function PasswordSection() {
           ? 'Changing it signs you out on your other devices.'
           : 'You signed up with Google or Apple. Add a password to also sign in with your email.'
       }>
-      {user.hasPassword && (
+      {user.hasPassword ? (
         <PasswordField label="Current password" value={current} onChange={setCurrent} autoComplete="current-password" />
+      ) : (
+        <OwnerCode code={ownerCode} onChange={setOwnerCode} />
       )}
       <PasswordField label="New password" value={next} onChange={setNext} autoComplete="new-password" showRules />
       <PasswordField
@@ -59,7 +66,11 @@ export function PasswordSection() {
         label={user.hasPassword ? 'Change password' : 'Set password'}
         onPress={save}
         busy={saving}
-        disabled={!isStrongPassword(next) || confirm !== next || (user.hasPassword && current === '')}
+        disabled={
+          !isStrongPassword(next) ||
+          confirm !== next ||
+          (user.hasPassword ? current === '' : ownerCode.length !== CODE_LENGTH)
+        }
       />
     </SettingsSection>
   );

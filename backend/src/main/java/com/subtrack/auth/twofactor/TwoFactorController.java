@@ -31,7 +31,7 @@ public class TwoFactorController {
 	@PostMapping("/setup")
 	public TwoFactorSetupResponse setup(@AuthenticationPrincipal AuthenticatedUser me,
 			@Valid @RequestBody TwoFactorSetupRequest request) {
-		accountService.confirmPassword(me.id(), request.currentPassword());
+		accountService.confirmOwner(me.id(), request.currentPassword(), request.confirmationCode());
 		return twoFactorService.beginSetup(me.id());
 	}
 

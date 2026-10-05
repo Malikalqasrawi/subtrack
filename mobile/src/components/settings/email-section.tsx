@@ -6,6 +6,7 @@ import { Banner, type BannerProps } from '@/components/banner';
 import { Button } from '@/components/button';
 import { CODE_LENGTH, CodeField } from '@/components/code-field';
 import { PasswordField } from '@/components/password-field';
+import { OwnerCode } from '@/components/settings/owner-code';
 import { SettingsSection } from '@/components/settings/section';
 import { TextField } from '@/components/text-field';
 import { useTheme } from '@/hooks/use-theme';
@@ -19,6 +20,7 @@ export function EmailSection() {
   const { updateUser } = useSession();
   const [newEmail, setNewEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [ownerCode, setOwnerCode] = useState('');
   // Set once a code has been sent to the new address and is waiting to be confirmed.
   const [pendingEmail, setPendingEmail] = useState<string>();
   const [code, setCode] = useState('');
@@ -36,8 +38,10 @@ export function EmailSection() {
     setEmailError(undefined);
     setBusy(true);
     try {
-      await userApi.requestEmailChange(address, password);
+      const proof = user.hasPassword ? { currentPassword: password } : { confirmationCode: ownerCode };
+      await userApi.requestEmailChange(address, proof);
       setPendingEmail(address);
+      setOwnerCode('');
     } catch (err) {
       setResult({ message: errorMessage(err, 'Could not start the email change') });
     } finally {
@@ -97,15 +101,17 @@ export function EmailSection() {
         maxLength={254}
         error={emailError}
       />
-      {user.hasPassword && (
+      {user.hasPassword ? (
         <PasswordField label="Current password" value={password} onChange={setPassword} autoComplete="current-password" />
+      ) : (
+        <OwnerCode code={ownerCode} onChange={setOwnerCode} />
       )}
       {result && <Banner {...result} />}
       <Button
         label="Send confirmation code"
         onPress={requestChange}
         busy={busy}
-        disabled={newEmail.trim() === '' || (user.hasPassword && password === '')}
+        disabled={newEmail.trim() === '' || (user.hasPassword ? password === '' : ownerCode.length !== CODE_LENGTH)}
       />
     </SettingsSection>
   );

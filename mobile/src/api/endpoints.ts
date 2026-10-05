@@ -3,6 +3,7 @@ import type {
   AuthResponse,
   CalendarMonth,
   DashboardSummary,
+  OwnerProof,
   Session,
   Subscription,
   SubscriptionRequest,
@@ -30,17 +31,17 @@ export const authApi = {
 export const userApi = {
   update: (displayName: string, phoneNumber: string, defaultCurrency: string) =>
     api<User>('/api/users/me', { method: 'PUT', body: { displayName, phoneNumber, defaultCurrency } }),
-  changePassword: (currentPassword: string, newPassword: string) =>
-    post<Session>('/api/users/me/password', { currentPassword, newPassword }),
-  requestEmailChange: (newEmail: string, currentPassword: string) =>
-    post<void>('/api/users/me/email', { newEmail, currentPassword }),
+  sendConfirmationCode: () => post<void>('/api/users/me/confirmation-code'),
+  changePassword: (proof: OwnerProof, newPassword: string) =>
+    post<Session>('/api/users/me/password', { ...proof, newPassword }),
+  requestEmailChange: (newEmail: string, proof: OwnerProof) => post<void>('/api/users/me/email', { newEmail, ...proof }),
   confirmEmailChange: (code: string) => post<User>('/api/users/me/email/confirm', { code }),
   logoutEverywhere: () => post<void>('/api/users/me/logout-all'),
-  deleteAccount: (currentPassword: string) => api<void>('/api/users/me', { method: 'DELETE', body: { currentPassword } }),
+  deleteAccount: (proof: OwnerProof) => api<void>('/api/users/me', { method: 'DELETE', body: proof }),
 };
 
 export const twoFactorApi = {
-  setup: (currentPassword: string) => post<TwoFactorSetup>('/api/users/me/2fa/setup', { currentPassword }),
+  setup: (proof: OwnerProof) => post<TwoFactorSetup>('/api/users/me/2fa/setup', proof),
   enable: (code: string) => post<{ recoveryCodes: string[] }>('/api/users/me/2fa/enable', { code }),
   disable: (code: string) => post<void>('/api/users/me/2fa/disable', { code }),
 };

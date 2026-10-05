@@ -16,7 +16,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Sensitive changes to an account. Each one asks for the current password first. */
+/** Sensitive changes to an account. Each one first asks for proof that the owner is making it. */
 @Service
 public class AccountService {
 
@@ -48,15 +48,28 @@ public class AccountService {
 
 	/** For sensitive steps handled outside this class, such as starting two-factor setup. */
 	@Transactional(readOnly = true)
-	public void confirmPassword(UUID userId, String currentPassword) {
-		requireCurrentPassword(userService.getById(userId), currentPassword);
+	public void confirmOwner(UUID userId, String currentPassword, String confirmationCode) {
+		requireOwner(userService.getById(userId), currentPassword, confirmationCode);
+	}
+
+	/** Emails the code that stands in for the password on accounts that have none. */
+	@Transactional
+	public void sendConfirmationCode(UUID userId) {
+		User user = userService.getById(userId);
+		if (user.hasPassword()) {
+			throw new BadRequestException("PASSWORD_REQUIRED", "Confirm this change with your password");
+		}
+		String code = verificationService.issueCode(user, CodePurpose.ACCOUNT_CONFIRMATION)
+			.orElseThrow(() -> new TooManyRequestsException("Wait a minute before requesting another code"));
+		codeMailer.send(user, CodePurpose.ACCOUNT_CONFIRMATION, code);
 	}
 
 	/** Changes the password, signs out every other device, and returns a fresh session for this one. */
 	@Transactional
-	public AuthSession changePassword(UUID userId, String currentPassword, String newPassword) {
+	public AuthSession changePassword(UUID userId, String currentPassword, String confirmationCode,
+			String newPassword) {
 		User user = userService.getById(userId);
-		requireCurrentPassword(user, currentPassword);
+		requireOwner(user, currentPassword, confirmationCode);
 		user.changePassword(passwordEncoder.encode(newPassword));
 		sessions.endAll(userId);
 		alerts.send(user.getEmail(), SecurityAlert.PASSWORD_CHANGED);
@@ -72,9 +85,9 @@ public class AccountService {
 
 	/** Emails a code to the new address. The email only changes once that code is confirmed. */
 	@Transactional
-	public void requestEmailChange(UUID userId, String newEmail, String currentPassword) {
+	public void requestEmailChange(UUID userId, String newEmail, String currentPassword, String confirmationCode) {
 		User user = userService.getById(userId);
-		requireCurrentPassword(user, currentPassword);
+		requireOwner(user, currentPassword, confirmationCode);
 		String normalized = User.normalizeEmail(newEmail);
 		if (normalized.equals(user.getEmail())) {
 			throw new BadRequestException("SAME_EMAIL", "That is already your email address");
@@ -97,15 +110,22 @@ public class AccountService {
 
 	/** Permanently removes the user. The database deletes everything that belongs to them with it. */
 	@Transactional
-	public void deleteAccount(UUID userId, String currentPassword) {
+	public void deleteAccount(UUID userId, String currentPassword, String confirmationCode) {
 		User user = userService.getById(userId);
-		requireCurrentPassword(user, currentPassword);
+		requireOwner(user, currentPassword, confirmationCode);
 		users.delete(user);
 	}
 
-	/** Accounts created with Google or Apple have no password to ask for until they set one. */
-	private void requireCurrentPassword(User user, String currentPassword) {
+	/**
+	 * Accounts created with Google or Apple have no password to ask for until they set one.
+	 * They prove who they are with a code emailed to the account's address instead.
+	 */
+	private void requireOwner(User user, String currentPassword, String confirmationCode) {
 		if (!user.hasPassword()) {
+			if (confirmationCode == null) {
+				throw new ForbiddenException("CONFIRMATION_REQUIRED", "Enter the code we emailed you");
+			}
+			verificationService.verify(user, CodePurpose.ACCOUNT_CONFIRMATION, confirmationCode).requireVerified();
 			return;
 		}
 		if (currentPassword == null || !passwordEncoder.matches(currentPassword, user.getPasswordHash())) {

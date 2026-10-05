@@ -213,11 +213,11 @@ cd frontend && npm run lint && npm test && npm run build
 cd mobile && npm run lint && npm run typecheck && npm test
 ```
 
-107 backend tests, 38 frontend tests and 213 mobile tests. They need no Docker, PostgreSQL, mail server, Google account or network: the backend runs against an in-memory H2 database in PostgreSQL mode, and the frontend and mobile tests replace the API.
+110 backend tests, 38 frontend tests and 215 mobile tests. They need no Docker, PostgreSQL, mail server, Google account or network: the backend runs against an in-memory H2 database in PostgreSQL mode, and the frontend and mobile tests replace the API.
 
 | Backend test | Covers |
 |---|---|
-| `ApiIntegrationTest` | End-to-end over HTTP: sign-up and verification, password rules, password reset, two-factor sign-in, lockouts per network address, token versions and sign-out everywhere, email and password changes, security alerts, limits on emailed codes, clean-up of unverified sign-ups, account deletion, token rotation, per-user data isolation, insights, reminders |
+| `ApiIntegrationTest` | End-to-end over HTTP: sign-up and verification, password rules, password reset, two-factor sign-in, lockouts per network address, token versions and sign-out everywhere, email and password changes, the emailed code that accounts without a password confirm them with, security alerts, limits on emailed codes, clean-up of unverified sign-ups, account deletion, token rotation, per-user data isolation, insights, reminders |
 | `LoginGuardTest` | Lockout per network address, the account-wide backstop, counts that expire or reset |
 | `SecretBoxTest` | AES-GCM encryption of stored secrets, older plain values, a wrong key or changed data, a missing key |
 | `ProductionChecksTest` | Production mode refusing codes in the log and an insecure cookie |
@@ -334,6 +334,7 @@ All endpoints are under `/api`. Everything except `/api/auth/*` and `/api/public
 | `GET`, `PUT /users/me` | Read or update the profile (name, phone number, default currency) |
 | `POST /users/me/password` | Change the password |
 | `POST /users/me/email`, `POST /users/me/email/confirm` | Change the email, confirmed by a code sent to the new address |
+| `POST /users/me/confirmation-code` | For an account without a password: email the code that confirms a sensitive change |
 | `POST /users/me/logout-all` | End every session on every device |
 | `DELETE /users/me` | Delete the account and everything in it |
 | `POST /users/me/2fa/setup`, `/enable`, `/disable` | Manage two-factor authentication |
@@ -374,7 +375,7 @@ Errors always have the same shape:
 - **Nobody can hold on to someone else's email**: a sign-up that was never verified is replaced by a newer one for the same address, and deleted after 48 hours. Names are letters only, so they cannot carry a link.
 - **Security alerts**: an email is sent when the password, the email address (to the old address) or two-factor authentication changes.
 - **Two-factor authentication** is optional and uses an authenticator app (TOTP). A used code cannot be replayed, eight single-use recovery codes cover a lost phone, guesses are limited to 5 per account every 5 minutes, and it applies to Google and Apple sign-ins too.
-- **Sensitive changes** (email, password, turning on two-factor, deleting the account) ask for the current password. A new email only takes effect after a code sent to it is confirmed.
+- **Sensitive changes** (email, password, turning on two-factor, deleting the account) ask for the current password. An account created with Google or Apple has no password, so it confirms them with a 6-digit code emailed to its address instead; the code works once and falls under the same limits as the other codes. A new email only takes effect after a code sent to it is confirmed.
 - **Email verification**: a 6-digit code that expires after 15 minutes, allows 5 wrong attempts, and can be resent once every 60 seconds. An account cannot sign in until it is verified.
 - **No account discovery**: registering an email that already exists, resending a code, and asking for a password reset respond the same way whether or not the account exists, and take about the same time: emails are sent in the background and a request that sends nothing does the same hashing work. The owner of an address that is already registered is told by email instead, once a day at most. Sign-in gives one error for both a wrong password and an unknown email.
 - **Emails to unconfirmed addresses** carry no text chosen by the person who signed up, so the app cannot be used to send someone else a message.
