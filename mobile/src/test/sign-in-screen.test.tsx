@@ -157,6 +157,17 @@ describe('SignInScreen', () => {
     expect(await screen.findByText('Google sign-in is not set up.')).toBeOnTheScreen();
   });
 
+  it('opens on the code step when a challenge is handed over', async () => {
+    mockParams.mockReturnValue({ challengeToken: 'challenge' });
+    jest.mocked(authApi.twoFactor).mockResolvedValue(SESSION);
+    await renderScreen(<SignInScreen />);
+
+    await userEvent.type(screen.getByLabelText('Code'), '123456');
+    await userEvent.press(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(authApi.twoFactor).toHaveBeenCalledWith('challenge', '123456');
+  });
+
   it('confirms a password change made on the reset screen', async () => {
     mockParams.mockReturnValue({ passwordChanged: '1' });
     await renderScreen(<SignInScreen />);
