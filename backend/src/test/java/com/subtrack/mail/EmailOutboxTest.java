@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.subtrack.common.SecretBox;
 import com.subtrack.support.MutableClock;
+import com.subtrack.support.PostgresTest;
 import com.subtrack.support.RecordingMailTransport;
 import java.time.Duration;
 import java.util.List;
@@ -15,7 +16,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -24,8 +24,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * has it, including a mail server that is down for a while or for good.
  */
 @SpringBootTest
-@ActiveProfiles("test")
-class EmailOutboxTest {
+class EmailOutboxTest extends PostgresTest {
 
 	private static final String BODY = """
 			Hi,

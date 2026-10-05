@@ -16,6 +16,7 @@ import com.subtrack.mail.EmailDispatcher;
 import com.subtrack.mail.EmailMessage;
 import com.subtrack.reminder.ReminderService;
 import com.subtrack.support.MutableClock;
+import com.subtrack.support.PostgresTest;
 import com.subtrack.support.RecordingMailTransport;
 import com.subtrack.user.UnverifiedAccountCleanup;
 import com.subtrack.user.User;
@@ -32,7 +33,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -40,8 +40,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("test")
-class ApiIntegrationTest {
+class ApiIntegrationTest extends PostgresTest {
 
 	private static final String PASSWORD = "correct-horse-battery-1";
 

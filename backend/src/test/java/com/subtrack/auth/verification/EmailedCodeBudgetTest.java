@@ -2,21 +2,20 @@ package com.subtrack.auth.verification;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.subtrack.support.PostgresTest;
 import com.subtrack.user.User;
 import com.subtrack.user.UserRepository;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 
 /** How many codes the whole application emails in an hour, here with room for two of each kind. */
 @SpringBootTest
-@ActiveProfiles("test")
 @TestPropertySource(properties = { "app.verification.global-codes-per-hour=2",
 		"app.verification.global-unverified-codes-per-hour=2" })
-class EmailedCodeBudgetTest {
+class EmailedCodeBudgetTest extends PostgresTest {
 
 	@Autowired
 	private VerificationService verification;

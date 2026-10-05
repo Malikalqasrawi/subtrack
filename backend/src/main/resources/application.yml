@@ -3,7 +3,13 @@ spring:
     name: subtrack
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/subtrack}
-    username: ${DB_USERNAME:subtrack}
+    # The application's own login: it can read and write rows and nothing else. It is created
+    # after the migrations, and its password is kept in step with DB_APP_PASSWORD.
+    username: ${DB_APP_USERNAME:subtrack_app}
+    password: ${DB_APP_PASSWORD:}
+  flyway:
+    # Migrations run as the owner of the schema.
+    user: ${DB_USERNAME:subtrack}
     password: ${DB_PASSWORD:subtrack}
   jpa:
     open-in-view: false

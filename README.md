@@ -93,7 +93,9 @@ You need Docker with the Compose plugin.
 
 ```bash
 cp .env.example .env
-# Edit .env: set DB_PASSWORD, set JWT_SECRET to the output of:
+# Edit .env: set DB_PASSWORD and DB_APP_PASSWORD, each to the output of:
+openssl rand -hex 24
+# JWT_SECRET to the output of:
 openssl rand -base64 48
 # and ENCRYPTION_KEY to the output of:
 openssl rand -base64 32
@@ -213,7 +215,7 @@ cd frontend && npm run lint && npm test && npm run build
 cd mobile && npm run lint && npm run typecheck && npm test
 ```
 
-110 backend tests, 38 frontend tests and 215 mobile tests. They need no Docker, PostgreSQL, mail server, Google account or network: the backend runs against an in-memory H2 database in PostgreSQL mode, and the frontend and mobile tests replace the API.
+121 backend tests, 38 frontend tests and 215 mobile tests. They need no mail server or Google account. The backend tests need Docker: they start a throwaway PostgreSQL 17 (Testcontainers; Colima is picked up by itself) and connect to it the way the deployed application does. The frontend and mobile tests replace the API.
 
 | Backend test | Covers |
 |---|---|
@@ -221,6 +223,7 @@ cd mobile && npm run lint && npm run typecheck && npm test
 | `LoginGuardTest` | Lockout per network address, the account-wide backstop, counts that expire or reset |
 | `SecretBoxTest` | AES-GCM encryption of stored secrets, older plain values, a wrong key or changed data, a missing key |
 | `ProductionChecksTest` | Production mode refusing codes in the log and an insecure cookie |
+| `ApplicationRoleTest` | The application's database login: not a superuser and not the owner, reads and writes rows, cannot change the schema, create logins or run server programs |
 | `TotpAuthenticatorTest` | Authenticator codes against the RFC 6238 test values, one step of clock drift, used and wrong codes, Base32 secrets |
 | `SocialLoginServiceTest` | Google and Apple sign-in: new accounts, linking by verified email, unverified sign-ups |
 | `StrongPasswordValidatorTest` | The password policy |
@@ -263,7 +266,8 @@ All settings are environment variables read by the backend. Defaults live in `ba
 | `JWT_SECRET` | none, required | Signs access tokens. At least 32 characters. The app will not start without it. |
 | `ENCRYPTION_KEY` | none, required | 32 random bytes in Base64. Encrypts two-factor secrets. Keep it: with another key, two-factor sign-ins stop working. |
 | `PRODUCTION` | `false` | `true` on a real server: refuses to start unless `MAIL_MODE` is `smtp` and `COOKIE_SECURE` is `true` |
-| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | local `subtrack` database | PostgreSQL connection |
+| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | local `subtrack` database | PostgreSQL address, and the owner of the schema, used only to run the migrations |
+| `DB_APP_USERNAME`, `DB_APP_PASSWORD` | `subtrack_app`, password required | The login the application uses for everything else. Created after the migrations with rights to read and write rows only |
 | `MAIL_MODE` | `smtp` | `smtp` sends email, `log` prints it to the console |
 | `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_SMTP_AUTH`, `MAIL_SMTP_STARTTLS` | Mailpit on `localhost:1025` | SMTP server |
 | `MAIL_FROM` | `Subtrack <no-reply@subtrack.local>` | Sender address |
@@ -360,7 +364,7 @@ Errors always have the same shape:
 - **Reminders are sent once.** The daily job records the renewal it reminded about in `last_reminder_for`, so a restart or a second run the same day sends nothing twice. The email is queued in the same transaction, so a mail server that is down delays it instead of losing it.
 - **Email goes through an outbox.** `EmailSender` saves the message in the same transaction as the change that caused it, so nothing is emailed about a change that was rolled back. A dispatcher sends it right after the commit, on background threads, and tries again after 1, 5, 15 and 60 minutes if the mail server is down; after the fifth failed attempt it gives up. Every email has a plain-text version and an HTML version built from the same text.
 - **Time is injected.** Services take a `Clock`, so deadlines, lockouts and cooldowns are tested with a clock the tests can move (`MutableClock`) instead of waiting.
-- **The schema is owned by migrations.** Flyway applies versioned SQL files and Hibernate only validates against them (`ddl-auto: validate`), so the database never changes by surprise.
+- **The schema is owned by migrations.** Flyway applies versioned SQL files and Hibernate only validates against them (`ddl-auto: validate`), so the database never changes by surprise. Migrations run as the owner of the schema; the application itself connects with a second login that can only read and write rows, so no request can drop a table or create a database user.
 - **One origin, no CORS.** nginx serves the React bundle and proxies `/api`, and the Vite dev server does the same, so the refresh cookie can be `SameSite=Strict` and no cross-origin rules exist to get wrong.
 - **Server data is cached in the browser, not copied into state.** TanStack Query holds what the API returned. Saving or deleting a subscription updates the list at once and marks the dashboard and calendar as out of date; a delete that the server refuses is put back.
 - **Secrets stay out of the repo.** Configuration comes from a git-ignored `.env`. A pre-commit hook (`git config core.hooksPath scripts/git-hooks`) blocks secret files, key-like strings and any value from `.env`, and CI scans every push with gitleaks.
