@@ -27,7 +27,7 @@ public record AppProperties(boolean production, @Valid @NotNull Security securit
 
 	public record Verification(@NotNull Duration codeTtl, @Min(1) int maxAttempts, @NotNull Duration resendCooldown,
 			@Min(1) int attemptsPerHour, @Min(1) int codesPerDay, @Min(1) int globalCodesPerHour,
-			@NotNull Duration unverifiedAccountTtl) {
+			@Min(1) int globalUnverifiedCodesPerHour, @NotNull Duration unverifiedAccountTtl) {
 	}
 
 	public record Login(@Min(1) int maxAttempts, @Min(1) int accountMaxAttempts, @NotNull Duration lockDuration) {
