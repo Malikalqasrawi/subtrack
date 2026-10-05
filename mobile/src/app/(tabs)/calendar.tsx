@@ -4,9 +4,9 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'r
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { RenewalEntry } from '@/api/types';
-import { Avatar } from '@/components/avatar';
 import { Banner } from '@/components/banner';
 import { Card } from '@/components/card';
+import { CategoryIcon } from '@/components/category-icon';
 import { TextLink } from '@/components/text-link';
 import { Fonts, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -172,7 +172,7 @@ function RenewalRow({ renewal, displayCurrency }: { renewal: RenewalEntry; displ
   const theme = useTheme();
   return (
     <View style={styles.row}>
-      <Avatar name={renewal.name} size={38} />
+      <CategoryIcon category={renewal.category} size={38} />
       <View style={styles.rowMain}>
         <Text style={[styles.rowName, { color: theme.text }]} numberOfLines={1}>
           {renewal.name}

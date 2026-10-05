@@ -1,4 +1,4 @@
-import { categoryLabel, cycleLabel, cycleUnit, daysUntil, parseIsoDate, relativeDay, toIsoDate } from '@/lib/format';
+import { categoryLabel, cycleLabel, cycleUnit, daysUntil, parseIsoDate, relativeDay, toIsoDate, urgencyOf } from '@/lib/format';
 
 describe('dates', () => {
   beforeEach(() => {
@@ -31,6 +31,13 @@ describe('dates', () => {
     expect(relativeDay('2026-10-04')).toBe('Today');
     expect(relativeDay('2026-10-05')).toBe('Tomorrow');
     expect(relativeDay('2026-10-12')).toBe('In 8 days');
+  });
+
+  it('ranks a renewal as today, within the week, or later', () => {
+    expect(urgencyOf('2026-10-04')).toBe('today');
+    expect(urgencyOf('2026-10-05')).toBe('soon');
+    expect(urgencyOf('2026-10-11')).toBe('soon');
+    expect(urgencyOf('2026-10-12')).toBe('later');
   });
 });
 

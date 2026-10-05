@@ -33,6 +33,15 @@ export function relativeDay(iso: string): string {
   return `In ${days} days`;
 }
 
+export type Urgency = 'today' | 'soon' | 'later';
+
+/** How close a renewal is: today, within the week, or further away. */
+export function urgencyOf(iso: string): Urgency {
+  const days = daysUntil(iso);
+  if (days <= 0) return 'today';
+  return days <= 7 ? 'soon' : 'later';
+}
+
 const titleCase = (value: string) => value.charAt(0) + value.slice(1).toLowerCase();
 
 export const categoryLabel = (category: Category) => titleCase(category);
@@ -46,10 +55,3 @@ const CYCLE_UNITS: Record<BillingCycle, string> = {
   YEARLY: 'year',
 };
 export const cycleUnit = (cycle: BillingCycle) => CYCLE_UNITS[cycle];
-
-/** A steady colour for a name, so each subscription keeps its own avatar colour. */
-export function hueFor(name: string): number {
-  let hash = 0;
-  for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) % 360;
-  return hash;
-}
