@@ -1,5 +1,6 @@
 package com.subtrack.subscription;
 
+import com.subtrack.common.RowAccess;
 import com.subtrack.common.error.BadRequestException;
 import com.subtrack.common.error.NotFoundException;
 import com.subtrack.currency.CurrencyConverter;
@@ -23,18 +24,22 @@ public class SubscriptionService {
 
 	private final CurrencyConverter currencyConverter;
 
+	private final RowAccess rowAccess;
+
 	private final Clock clock;
 
 	public SubscriptionService(SubscriptionRepository subscriptions, UserService userService,
-			CurrencyConverter currencyConverter, Clock clock) {
+			CurrencyConverter currencyConverter, RowAccess rowAccess, Clock clock) {
 		this.subscriptions = subscriptions;
 		this.userService = userService;
 		this.currencyConverter = currencyConverter;
+		this.rowAccess = rowAccess;
 		this.clock = clock;
 	}
 
 	@Transactional(readOnly = true)
 	public List<SubscriptionResponse> list(UUID userId) {
+		rowAccess.asUser(userId);
 		User user = userService.getById(userId);
 		return subscriptions.findByUserSortedByName(userId)
 			.stream()
@@ -44,11 +49,13 @@ public class SubscriptionService {
 
 	@Transactional(readOnly = true)
 	public SubscriptionResponse get(UUID userId, UUID id) {
+		rowAccess.asUser(userId);
 		return toResponse(findOwned(userId, id), userService.getById(userId));
 	}
 
 	@Transactional
 	public SubscriptionResponse create(UUID userId, SubscriptionRequest request) {
+		rowAccess.asUser(userId);
 		requireSupportedCurrency(request.currency());
 		User user = userService.getById(userId);
 		Subscription subscription = subscriptions.save(new Subscription(user, request.toDetails()));
@@ -57,6 +64,7 @@ public class SubscriptionService {
 
 	@Transactional
 	public SubscriptionResponse update(UUID userId, UUID id, SubscriptionRequest request) {
+		rowAccess.asUser(userId);
 		requireSupportedCurrency(request.currency());
 		Subscription subscription = findOwned(userId, id);
 		subscription.apply(request.toDetails());
@@ -65,6 +73,7 @@ public class SubscriptionService {
 
 	@Transactional
 	public void delete(UUID userId, UUID id) {
+		rowAccess.asUser(userId);
 		subscriptions.delete(findOwned(userId, id));
 	}
 

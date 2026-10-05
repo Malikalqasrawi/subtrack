@@ -215,7 +215,7 @@ cd frontend && npm run lint && npm test && npm run build
 cd mobile && npm run lint && npm run typecheck && npm test
 ```
 
-121 backend tests, 38 frontend tests and 215 mobile tests. They need no mail server or Google account. The backend tests need Docker: they start a throwaway PostgreSQL 17 (Testcontainers; Colima is picked up by itself) and connect to it the way the deployed application does. The frontend and mobile tests replace the API.
+130 backend tests, 38 frontend tests and 215 mobile tests. They need no mail server or Google account. The backend tests need Docker: they start a throwaway PostgreSQL 17 (Testcontainers; Colima is picked up by itself) and connect to it the way the deployed application does. The frontend and mobile tests replace the API.
 
 | Backend test | Covers |
 |---|---|
@@ -223,6 +223,7 @@ cd mobile && npm run lint && npm run typecheck && npm test
 | `LoginGuardTest` | Lockout per network address, the account-wide backstop, counts that expire or reset |
 | `SecretBoxTest` | AES-GCM encryption of stored secrets, older plain values, a wrong key or changed data, a missing key |
 | `ProductionChecksTest` | Production mode refusing codes in the log and an insecure cookie |
+| `SubscriptionRowSecurityTest` | Row level security: no rows without a user, only the user's own rows from a query with no filter, another user's row cannot be read, changed, deleted, created or taken over, scheduled jobs and account deletion still work |
 | `ApplicationRoleTest` | The application's database login: not a superuser and not the owner, reads and writes rows, cannot change the schema, create logins or run server programs |
 | `TotpAuthenticatorTest` | Authenticator codes against the RFC 6238 test values, one step of clock drift, used and wrong codes, Base32 secrets |
 | `SocialLoginServiceTest` | Google and Apple sign-in: new accounts, linking by verified email, unverified sign-ups |
@@ -386,7 +387,7 @@ Errors always have the same shape:
 - **Browser headers**: a Content-Security-Policy that only allows the app's own scripts plus the Google and Apple sign-in SDKs, and `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` and `Strict-Transport-Security` on every response including static assets.
 - **Sessions**: a 15-minute JWT access token held only in browser memory, plus a 14-day refresh token in an `HttpOnly`, `SameSite=Strict` cookie scoped to `/api/auth`. Refresh tokens are stored hashed, are single-use, and are rotated on every refresh. Reusing an old one ends all of that user's sessions. Every access token carries the user's token version: changing or resetting the password, "Sign out of all devices" and deleting the account make every earlier token stop working at once, without a blocklist.
 - **Rate limiting** per client IP with a token bucket: 10 requests per minute on `/api/auth/*`, 10 per hour on the requests that send an email, 120 per minute on the rest of the API. Over the limit, the API answers `429` with a `Retry-After` header.
-- **Data isolation**: every subscription query filters by the signed-in user's id, so another user's id returns `404`.
+- **Data isolation**: every subscription query filters by the signed-in user's id, so another user's id returns `404`. Behind that, PostgreSQL row level security on the subscriptions table shows the application only the rows of the user a transaction was opened for, so a query that forgot the filter would return nothing instead of everyone's data.
 - **Input validation** on every request body, and JPA parameter binding throughout, so there is no string-built SQL.
 
 Before putting this on the internet: serve it over HTTPS, set `COOKIE_SECURE=true` and `PRODUCTION=true`, use a real SMTP provider, and do not publish the database port.

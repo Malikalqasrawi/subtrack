@@ -1,5 +1,6 @@
 package com.subtrack.reminder;
 
+import com.subtrack.common.RowAccess;
 import com.subtrack.subscription.Subscription;
 import com.subtrack.subscription.SubscriptionRepository;
 import java.time.Clock;
@@ -20,17 +21,22 @@ public class ReminderService {
 
 	private final List<NotificationChannel> channels;
 
+	private final RowAccess rowAccess;
+
 	private final Clock clock;
 
-	public ReminderService(SubscriptionRepository subscriptions, List<NotificationChannel> channels, Clock clock) {
+	public ReminderService(SubscriptionRepository subscriptions, List<NotificationChannel> channels,
+			RowAccess rowAccess, Clock clock) {
 		this.subscriptions = subscriptions;
 		this.channels = channels;
+		this.rowAccess = rowAccess;
 		this.clock = clock;
 	}
 
 	/** Sends one reminder per upcoming renewal and returns how many were sent. */
 	@Transactional
 	public int sendDueReminders() {
+		rowAccess.asSystem();
 		LocalDate today = LocalDate.now(clock);
 		int sent = 0;
 		for (Subscription subscription : subscriptions.findActiveWithRemindersEnabled()) {
