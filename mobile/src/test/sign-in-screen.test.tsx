@@ -4,6 +4,7 @@ import { ApiError } from '@/api/client';
 import { authApi } from '@/api/endpoints';
 import type { Session } from '@/api/types';
 import SignInScreen from '@/app/sign-in';
+import { GoogleSignInError, requestGoogleIdToken } from '@/lib/google-sign-in';
 import { pendingVerification } from '@/session/pending-verification';
 import { user } from '@/test/fixtures';
 import { renderScreen } from '@/test/render-screen';
@@ -13,6 +14,10 @@ const mockSignIn = jest.fn();
 const mockParams = jest.fn();
 
 jest.mock('@/api/endpoints');
+jest.mock('@/lib/google-sign-in', () => ({
+  ...jest.requireActual('@/lib/google-sign-in'),
+  requestGoogleIdToken: jest.fn(),
+}));
 jest.mock('expo-router', () => ({ useRouter: () => mockRouter, useLocalSearchParams: () => mockParams() }));
 jest.mock('@/session/session-context', () => ({ useSession: () => ({ signIn: mockSignIn }) }));
 
@@ -109,6 +114,47 @@ describe('SignInScreen', () => {
     expect(authApi.resendVerification).toHaveBeenCalledWith('demo@subtrack.example');
     expect(pendingVerification.get()).toEqual({ email: 'demo@subtrack.example', password: PASSWORD });
     expect(mockRouter.push).toHaveBeenCalledWith('/verify-email');
+  });
+
+  it('signs in with the ID token Google returns', async () => {
+    jest.mocked(requestGoogleIdToken).mockResolvedValue('id-token');
+    jest.mocked(authApi.google).mockResolvedValue({ ...SESSION, twoFactorRequired: false });
+    await renderScreen(<SignInScreen />);
+
+    await userEvent.press(screen.getByRole('button', { name: 'Continue with Google' }));
+
+    expect(authApi.google).toHaveBeenCalledWith('id-token');
+    expect(mockSignIn).toHaveBeenCalledWith(expect.objectContaining({ refreshToken: 'refresh' }));
+  });
+
+  it('asks a Google account with two-factor on for its code', async () => {
+    jest.mocked(requestGoogleIdToken).mockResolvedValue('id-token');
+    jest.mocked(authApi.google).mockResolvedValue({ twoFactorRequired: true, challengeToken: 'challenge' });
+    await renderScreen(<SignInScreen />);
+
+    await userEvent.press(screen.getByRole('button', { name: 'Continue with Google' }));
+
+    expect(await screen.findByLabelText('Code')).toBeOnTheScreen();
+    expect(mockSignIn).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the Google picker is closed', async () => {
+    jest.mocked(requestGoogleIdToken).mockResolvedValue(undefined);
+    await renderScreen(<SignInScreen />);
+
+    await userEvent.press(screen.getByRole('button', { name: 'Continue with Google' }));
+
+    expect(authApi.google).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).not.toBeOnTheScreen();
+  });
+
+  it('shows why Google sign-in failed', async () => {
+    jest.mocked(requestGoogleIdToken).mockRejectedValue(new GoogleSignInError('Google sign-in is not set up.'));
+    await renderScreen(<SignInScreen />);
+
+    await userEvent.press(screen.getByRole('button', { name: 'Continue with Google' }));
+
+    expect(await screen.findByText('Google sign-in is not set up.')).toBeOnTheScreen();
   });
 
   it('confirms a password change made on the reset screen', async () => {

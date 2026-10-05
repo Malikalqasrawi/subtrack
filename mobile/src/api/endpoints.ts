@@ -22,6 +22,7 @@ export const authApi = {
   forgotPassword: (email: string) => post<void>('/api/auth/forgot-password', { email }, false),
   resetPassword: (email: string, code: string, newPassword: string) =>
     post<void>('/api/auth/reset-password', { email, code, newPassword }, false),
+  google: (idToken: string) => post<AuthResponse>('/api/auth/google', { idToken }, false),
   twoFactor: (challengeToken: string, code: string) => post<Session>('/api/auth/2fa', { challengeToken, code }, false),
   logout: (refreshToken: string) => post<void>('/api/auth/logout', { refreshToken }, false),
 };

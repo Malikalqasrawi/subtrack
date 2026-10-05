@@ -13,6 +13,7 @@ import { TextField } from '@/components/text-field';
 import { TextLink } from '@/components/text-link';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { requestGoogleIdToken } from '@/lib/google-sign-in';
 import { pendingVerification } from '@/session/pending-verification';
 import { useSession } from '@/session/session-context';
 
@@ -67,6 +68,12 @@ export default function SignInScreen() {
         router.push('/verify-email');
       }
     }, 'Could not sign in');
+
+  const submitGoogle = () =>
+    submit(true, async () => {
+      const idToken = await requestGoogleIdToken();
+      if (idToken) await onResult(await authApi.google(idToken));
+    }, 'Could not sign in with Google');
 
   const submitCode = () =>
     submit(canCheckCode, async () => {
@@ -127,6 +134,12 @@ export default function SignInScreen() {
       </View>
       {error && <Banner message={error} />}
       <Button label="Sign in" onPress={submitPassword} busy={submitting} disabled={!canSignIn} />
+      <View style={styles.divider}>
+        <View style={[styles.line, { backgroundColor: theme.border }]} />
+        <Text style={{ color: theme.textMuted }}>or</Text>
+        <View style={[styles.line, { backgroundColor: theme.border }]} />
+      </View>
+      <Button label="Continue with Google" variant="ghost" onPress={submitGoogle} disabled={submitting} />
       <View style={styles.switch}>
         <Text style={{ color: theme.textSecondary }}>New here?</Text>
         <TextLink label="Create an account" onPress={() => router.push('/register')} />
@@ -138,6 +151,15 @@ export default function SignInScreen() {
 const styles = StyleSheet.create({
   forgot: {
     alignItems: 'flex-end',
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
+  line: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
   },
   switch: {
     flexDirection: 'row',

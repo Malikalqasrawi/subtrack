@@ -126,7 +126,27 @@ Port 8082 is used because the backend container already holds 8081, the Expo def
 
 `EXPO_PUBLIC_API_URL` in `.env` is where the app finds the API. The default, `http://10.0.2.2:3000`, is how an Android emulator reaches the computer it runs on. For a real phone, set it to your computer's address on the same Wi-Fi, for example `http://192.168.1.20:3000`.
 
-The app has sign-in with the two-factor step, sign-up with email verification, password reset, the dashboard with charts, subscriptions with search, filters and sorting, a details screen, the calendar and account settings. It follows the phone's light or dark setting, or the one chosen under Settings → Appearance. Known services such as Netflix or Spotify get their logo ([Simple Icons](https://simpleicons.org), CC0), matched by name. Sign-in with Google is on the website only for now.
+The app has sign-in with the two-factor step, sign-up with email verification, password reset, the dashboard with charts, subscriptions with search, filters and sorting, a details screen, the calendar and account settings. It follows the phone's light or dark setting, or the one chosen under Settings → Appearance. Known services such as Netflix or Spotify get their logo ([Simple Icons](https://simpleicons.org), CC0), matched by name.
+
+### Google sign-in in the app
+
+Google sign-in uses native code, so it does not work in Expo Go: the button answers that it needs the installed app. To try it, build the app once (needs JDK 17 or 21 and the Android SDK):
+
+```bash
+cd mobile
+npx expo run:android --port 8082
+```
+
+It also needs two OAuth clients in the same Google Cloud project:
+
+1. The **Web application** client from [Sign in with Google and Apple](#sign-in-with-google-and-apple). Put its client id in `mobile/.env` as `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, the same value as `GOOGLE_CLIENT_ID` in the root `.env`.
+2. An **Android** client with the package name `com.malik.subtrack` and the SHA-1 fingerprint of the key the build is signed with. For a debug build:
+
+```bash
+keytool -list -v -keystore mobile/android/app/debug.keystore -storepass android
+```
+
+The Android client's id is not used anywhere. It only has to exist, so Google accepts requests from this app. The app receives an ID token issued for the web client and sends it to `POST /api/auth/google`, the same endpoint the website uses.
 
 ## Sign in with Google and Apple
 
@@ -193,7 +213,7 @@ cd frontend && npm run lint && npm test && npm run build
 cd mobile && npm run lint && npm run typecheck && npm test
 ```
 
-101 backend tests, 38 frontend tests and 193 mobile tests. They need no Docker, PostgreSQL, mail server, Google account or network: the backend runs against an in-memory H2 database in PostgreSQL mode, and the frontend and mobile tests replace the API.
+101 backend tests, 38 frontend tests and 203 mobile tests. They need no Docker, PostgreSQL, mail server, Google account or network: the backend runs against an in-memory H2 database in PostgreSQL mode, and the frontend and mobile tests replace the API.
 
 | Backend test | Covers |
 |---|---|
@@ -224,6 +244,7 @@ cd mobile && npm run lint && npm run typecheck && npm test
 |---|---|
 | `*-screen.test.tsx`, `settings-security.test.tsx` | Each screen against a replaced API: sign-in with the two-factor step, sign-up, verification, password reset, dashboard, subscriptions list and details, calendar, settings |
 | `subscription-form.test.tsx`, `subscription-form.test.ts` | The add and edit form, the request that is sent, field errors |
+| `google-sign-in.test.ts` | The ID token from Google's account picker, a closed picker, a missing client id, missing Play services |
 | `session-context.test.tsx` | Stored sessions, sign-in, sign-out, a session that has ended |
 | `appearance-*.test.ts(x)` | The saved theme choice and following the phone |
 | `subscription-list.test.ts`, `calendar.test.ts`, `charts.test.ts`, `brands.test.ts` | Search, filter and sort, month grids, chart geometry, matching a name to a logo |
@@ -368,7 +389,7 @@ Before putting this on the internet: serve it over HTTPS, set `COOKIE_SECURE=tru
 - "Today" is the server's UTC date, so a renewal can appear a day early or late for users far from UTC.
 - The per-address sign-in counts live in the backend's memory, like the rate limits, and reset on restart.
 - The phone number is stored but not verified by SMS, which would need a paid SMS provider.
-- Google and Apple sign-in are covered by tests with a stand-in verifier, but have not been run against the real providers, which needs your own client ids.
+- Google sign-in has been run against Google from the Android app, not yet from the website. Apple sign-in is covered by tests with a stand-in verifier only, because the real one needs a paid developer account.
 - Categories are a fixed list.
 
 ## Author
