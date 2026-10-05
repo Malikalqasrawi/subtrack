@@ -3,10 +3,13 @@ package com.subtrack.auth.social;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.subtrack.auth.alert.SecurityAlert;
+import com.subtrack.auth.alert.SecurityAlertMailer;
 import com.subtrack.common.error.BadRequestException;
 import com.subtrack.support.PostgresTest;
 import com.subtrack.user.User;
 import com.subtrack.user.UserRepository;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,6 +36,17 @@ class SocialLoginServiceTest extends PostgresTest {
 
 	private SocialLoginService service;
 
+	/** The addresses that were told about a new way to sign in. */
+	private final List<String> alerted = new ArrayList<>();
+
+	private final SecurityAlertMailer alerts = new SecurityAlertMailer(null) {
+		@Override
+		public void send(String toAddress, SecurityAlert alert) {
+			assertThat(alert).isEqualTo(SecurityAlert.SIGN_IN_METHOD_ADDED);
+			alerted.add(toAddress);
+		}
+	};
+
 	/** The fake verifier treats the "token" as "subject|email|verified". */
 	private final IdentityTokenVerifier fakeGoogle = new IdentityTokenVerifier() {
 		@Override
@@ -55,7 +69,7 @@ class SocialLoginServiceTest extends PostgresTest {
 
 	@BeforeEach
 	void setUp() {
-		service = new SocialLoginService(List.of(fakeGoogle), users, socialAccounts, passwordEncoder);
+		service = new SocialLoginService(List.of(fakeGoogle), users, socialAccounts, passwordEncoder, alerts);
 	}
 
 	@Test
@@ -67,6 +81,7 @@ class SocialLoginServiceTest extends PostgresTest {
 		assertThat(user.getDisplayName()).isEqualTo("Google Name");
 		assertThat(user.isEmailVerified()).isTrue();
 		assertThat(user.hasPassword()).isFalse();
+		assertThat(alerted).isEmpty();
 	}
 
 	@Test
@@ -90,6 +105,20 @@ class SocialLoginServiceTest extends PostgresTest {
 		assertThat(signedIn.getId()).isEqualTo(existing.getId());
 		assertThat(signedIn.hasPassword()).isTrue();
 		assertThat(passwordEncoder.matches("existing-pass-1", signedIn.getPasswordHash())).isTrue();
+		assertThat(alerted).containsExactly(email);
+	}
+
+	@Test
+	void theOwnerIsToldOnlyTheFirstTime() {
+		String email = newEmail();
+		User existing = new User(email, passwordEncoder.encode("existing-pass-1"), "Existing", "+962791234567", "USD");
+		existing.markEmailVerified();
+		users.save(existing);
+
+		service.signIn(SocialProvider.GOOGLE, token("sub-6" + email, email, true), null);
+		service.signIn(SocialProvider.GOOGLE, token("sub-6" + email, email, true), null);
+
+		assertThat(alerted).containsExactly(email);
 	}
 
 	@Test

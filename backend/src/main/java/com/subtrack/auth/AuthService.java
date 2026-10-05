@@ -19,13 +19,11 @@ import com.subtrack.auth.verification.VerificationService;
 import com.subtrack.common.ClientAddress;
 import com.subtrack.common.error.BadRequestException;
 import com.subtrack.common.error.ForbiddenException;
-import com.subtrack.common.error.TooManyRequestsException;
 import com.subtrack.common.error.UnauthorizedException;
 import com.subtrack.user.User;
 import com.subtrack.user.UserRepository;
 import com.subtrack.user.UserService;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -167,7 +165,7 @@ public class AuthService {
 			.orElseThrow(() -> new UnauthorizedException("CHALLENGE_EXPIRED", "That took too long. Sign in again."));
 		String address = ClientAddress.current();
 		Instant now = clock.instant();
-		requireNotLocked(userService.getById(userId), address, now);
+		loginGuard.requireNotLocked(userService.getById(userId), address, now);
 		boolean accepted = twoFactorService.verify(userId, code);
 		// Loaded again: checking the code changed the user (the last used code, or a recovery code).
 		User user = userService.getById(userId);
@@ -234,8 +232,8 @@ public class AuthService {
 		String address = ClientAddress.current();
 		Instant now = clock.instant();
 		// An email without an account is locked like a real one, or the lock would give it away.
-		refuseWhileLocked(user.map(found -> loginGuard.lockedUntil(found, address, now))
-			.orElseGet(() -> loginGuard.lockedUntil(normalized, address, now)), now);
+		user.ifPresentOrElse(found -> loginGuard.requireNotLocked(found, address, now),
+				() -> loginGuard.requireNotLocked(normalized, address, now));
 		String hash = user.map(User::getPasswordHash).orElse(dummyPasswordHash);
 		if (passwordEncoder.matches(password, hash)) {
 			return user;
@@ -245,18 +243,6 @@ public class AuthService {
 			users.save(found);
 		}, () -> loginGuard.recordWrong(normalized, address, now));
 		return Optional.empty();
-	}
-
-	private void requireNotLocked(User user, String address, Instant now) {
-		refuseWhileLocked(loginGuard.lockedUntil(user, address, now), now);
-	}
-
-	private static void refuseWhileLocked(Optional<Instant> lockedUntil, Instant now) {
-		lockedUntil.ifPresent(until -> {
-			long minutes = Math.max(1, Duration.between(now, until).plusSeconds(59).toMinutes());
-			throw new TooManyRequestsException("ACCOUNT_LOCKED", "Too many wrong attempts. Try again in " + minutes
-					+ (minutes == 1 ? " minute" : " minutes") + ", or reset your password.");
-		});
 	}
 
 	private void clearFailedLogins(User user) {

@@ -1,12 +1,15 @@
 package com.subtrack.user;
 
+import com.subtrack.auth.LoginGuard;
 import com.subtrack.common.error.BadRequestException;
 import com.subtrack.common.error.NotFoundException;
 import com.subtrack.currency.CurrencyConverter;
 import com.subtrack.user.dto.UpdateProfileRequest;
+import java.time.Clock;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -16,14 +19,29 @@ public class UserService {
 
 	private final CurrencyConverter currencyConverter;
 
-	public UserService(UserRepository users, CurrencyConverter currencyConverter) {
+	private final LoginGuard loginGuard;
+
+	private final Clock clock;
+
+	public UserService(UserRepository users, CurrencyConverter currencyConverter, LoginGuard loginGuard, Clock clock) {
 		this.users = users;
 		this.currencyConverter = currencyConverter;
+		this.loginGuard = loginGuard;
+		this.clock = clock;
 	}
 
 	@Transactional(readOnly = true)
 	public User getById(UUID id) {
 		return users.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
+	}
+
+	/**
+	 * Counts a wrong password given for a sensitive change, like a wrong password at sign-in.
+	 * In a transaction of its own, so the count stays although the change is refused and rolled back.
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void recordWrongPassword(UUID id, String address) {
+		loginGuard.recordWrong(getById(id), address, clock.instant());
 	}
 
 	@Transactional

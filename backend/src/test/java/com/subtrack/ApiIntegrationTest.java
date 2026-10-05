@@ -14,7 +14,15 @@ import com.subtrack.auth.twofactor.TotpAuthenticator;
 import com.subtrack.auth.twofactor.TotpTestSupport;
 import com.subtrack.mail.EmailDispatcher;
 import com.subtrack.mail.EmailMessage;
+import com.subtrack.common.RowAccess;
 import com.subtrack.reminder.ReminderService;
+import com.subtrack.subscription.BillingCycle;
+import com.subtrack.subscription.Category;
+import com.subtrack.subscription.Subscription;
+import com.subtrack.subscription.SubscriptionDetails;
+import com.subtrack.subscription.SubscriptionRepository;
+import com.subtrack.subscription.SubscriptionService;
+import com.subtrack.subscription.SubscriptionStatus;
 import com.subtrack.support.MutableClock;
 import com.subtrack.support.PostgresTest;
 import com.subtrack.support.RecordingMailTransport;
@@ -22,6 +30,7 @@ import com.subtrack.user.UnverifiedAccountCleanup;
 import com.subtrack.user.User;
 import com.subtrack.user.UserRepository;
 import jakarta.servlet.http.Cookie;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -37,6 +46,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -70,6 +81,15 @@ class ApiIntegrationTest extends PostgresTest {
 
 	@Autowired
 	private AccessTokenService accessTokens;
+
+	@Autowired
+	private SubscriptionRepository subscriptions;
+
+	@Autowired
+	private RowAccess rowAccess;
+
+	@Autowired
+	private PlatformTransactionManager transactionManager;
 
 	@AfterEach
 	void backToNow() {
@@ -814,6 +834,51 @@ class ApiIntegrationTest extends PostgresTest {
 			.andExpect(jsonPath("$.email").value(wanted));
 
 		mvc.perform(json(post("/api/auth/login"), credentials(wanted, PASSWORD))).andExpect(status().isOk());
+	}
+
+	@Test
+	void wrongCurrentPasswordsLockLikeWrongPasswordsAtSignIn() throws Exception {
+		String email = newEmail();
+		String token = signUp(email);
+		RequestPostProcessor thief = from("203.0.113.40");
+
+		for (int i = 0; i < 5; i++) {
+			mvc.perform(json(delete("/api/users/me"), currentPassword("wrong-password-" + i))
+				.header("Authorization", token)
+				.with(thief)).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("WRONG_PASSWORD"));
+		}
+		// Even the right password is refused now, for changes and for signing in from there.
+		mvc.perform(json(delete("/api/users/me"), currentPassword(PASSWORD)).header("Authorization", token).with(thief))
+			.andExpect(status().isTooManyRequests())
+			.andExpect(jsonPath("$.code").value("ACCOUNT_LOCKED"));
+		mvc.perform(json(post("/api/auth/login"), credentials(email, PASSWORD)).with(thief))
+			.andExpect(status().isTooManyRequests());
+
+		// The wrong tries were kept on the account although every one of those requests failed.
+		assertThat(users.findByEmail(email).orElseThrow().hasFailedLogins()).isTrue();
+		// The owner, somewhere else, is not locked out.
+		mvc.perform(json(post("/api/auth/login"), credentials(email, PASSWORD)).with(from("203.0.113.41")))
+			.andExpect(status().isOk());
+	}
+
+	@Test
+	void anAccountCannotKeepMoreSubscriptionsThanTheLimit() throws Exception {
+		String email = newEmail();
+		String token = signUp(email);
+		User user = users.findByEmail(email).orElseThrow();
+		new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+			rowAccess.asUser(user.getId());
+			for (int i = 0; i < SubscriptionService.MAX_PER_ACCOUNT; i++) {
+				subscriptions.save(new Subscription(user, new SubscriptionDetails("Plan " + i, new BigDecimal("1.00"), "USD",
+						BillingCycle.MONTHLY, Category.OTHER, LocalDate.of(2026, 1, 1), SubscriptionStatus.ACTIVE, null,
+						null, null)));
+			}
+		});
+
+		mvc.perform(json(post("/api/subscriptions"), subscription("One too many", "9.99", "USD", "MONTHLY", LocalDate.of(2026, 1, 15)))
+			.header("Authorization", token))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("SUBSCRIPTION_LIMIT"));
 	}
 
 	@Test
