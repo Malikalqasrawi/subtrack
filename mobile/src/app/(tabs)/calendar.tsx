@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RenewalEntry } from '@/api/types';
 import { Banner } from '@/components/banner';
 import { Card } from '@/components/card';
-import { CategoryIcon } from '@/components/category-icon';
+import { ServiceIcon } from '@/components/service-icon';
 import { TextLink } from '@/components/text-link';
 import { Fonts, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -172,7 +172,7 @@ function RenewalRow({ renewal, displayCurrency }: { renewal: RenewalEntry; displ
   const theme = useTheme();
   return (
     <View style={styles.row}>
-      <CategoryIcon category={renewal.category} size={38} />
+      <ServiceIcon name={renewal.name} category={renewal.category} size={38} />
       <View style={styles.rowMain}>
         <Text style={[styles.rowName, { color: theme.text }]} numberOfLines={1}>
           {renewal.name}

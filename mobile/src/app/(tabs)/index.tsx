@@ -3,11 +3,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { CategorySpend, DashboardSummary, MonthlyProjection, RenewalEntry } from '@/api/types';
 import { Card } from '@/components/card';
-import { CategoryIcon } from '@/components/category-icon';
 import { DonutChart } from '@/components/donut-chart';
 import { LineChart } from '@/components/line-chart';
 import { RenewalTag } from '@/components/renewal-tag';
 import { LoadError, Loading } from '@/components/screen-state';
+import { ServiceIcon } from '@/components/service-icon';
 import { Fonts, Hero, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
@@ -98,7 +98,7 @@ function UpcomingList({ upcoming, displayCurrency }: { upcoming: RenewalEntry[];
     <View style={styles.list}>
       {upcoming.map((renewal) => (
         <View key={renewal.subscriptionId + renewal.date} style={styles.row}>
-          <CategoryIcon category={renewal.category} />
+          <ServiceIcon name={renewal.name} category={renewal.category} />
           <View style={styles.rowMain}>
             <Text style={[styles.rowName, { color: theme.text }]} numberOfLines={1}>
               {renewal.name}

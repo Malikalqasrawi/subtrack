@@ -6,10 +6,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { STATUSES, type Subscription } from '@/api/types';
 import { Card } from '@/components/card';
-import { CategoryIcon } from '@/components/category-icon';
 import { Chips } from '@/components/chips';
 import { RenewalTag } from '@/components/renewal-tag';
 import { LoadError, Loading } from '@/components/screen-state';
+import { ServiceIcon } from '@/components/service-icon';
 import { Fonts, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { categoryLabel, cycleUnit, formatDate, formatMoney, statusLabel } from '@/lib/format';
@@ -129,7 +129,7 @@ function SubscriptionCard({ subscription }: { subscription: Subscription }) {
   const converted = subscription.currency !== subscription.displayCurrency || subscription.billingCycle !== 'MONTHLY';
   return (
     <Card style={[styles.card, !active && styles.inactive]}>
-      <CategoryIcon category={subscription.category} size={46} />
+      <ServiceIcon name={subscription.name} category={subscription.category} size={46} />
       <View style={styles.cardMain}>
         <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
           {subscription.name}
