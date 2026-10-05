@@ -12,6 +12,10 @@ An Android and iOS app, with a website on the same API, for keeping track of you
 ![Docker](https://img.shields.io/badge/Docker-compose-2496ED?logo=docker&logoColor=white)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+<p align="center">
+  <img src="docs/screenshots/app-tour.gif" width="300" alt="A walk through the app: dashboard, charts, subscriptions, a subscription's details, the calendar and the add form">
+</p>
+
 ## Why
 
 Subscriptions are easy to start and easy to forget. The charges are small, they land on different days, some are yearly, and a few are in another currency, so the real monthly total is rarely known. Subtrack answers three questions in one place:

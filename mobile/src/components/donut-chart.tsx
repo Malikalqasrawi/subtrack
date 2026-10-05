@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, { Circle, G } from 'react-native-svg';
 
 import { useTheme } from '@/hooks/use-theme';
 import { ringArcs } from '@/lib/charts';
@@ -26,18 +26,20 @@ export function DonutChart({ segments, size = 132, thickness = 16, accessibility
   const ring = { cx: size / 2, cy: size / 2, r: radius, fill: 'none', strokeWidth: thickness };
   return (
     <View accessible accessibilityRole="image" accessibilityLabel={accessibilityLabel} style={{ width: size, height: size }}>
-      {/* Turned a quarter back so the first segment starts at the top. */}
-      <Svg width={size} height={size} style={styles.turned}>
-        <Circle {...ring} stroke={theme.surfaceAlt} />
-        {segments.map((segment, index) => (
-          <Circle
-            key={index}
-            {...ring}
-            stroke={segment.color}
-            strokeDasharray={`${arcs[index].length} ${circumference - arcs[index].length}`}
-            strokeDashoffset={-arcs[index].offset}
-          />
-        ))}
+      <Svg width={size} height={size}>
+        {/* Turned a quarter back so the first segment starts at the top. */}
+        <G rotation={-90} origin={`${size / 2}, ${size / 2}`}>
+          <Circle {...ring} stroke={theme.surfaceAlt} />
+          {segments.map((segment, index) => (
+            <Circle
+              key={index}
+              {...ring}
+              stroke={segment.color}
+              strokeDasharray={`${arcs[index].length} ${circumference - arcs[index].length}`}
+              strokeDashoffset={-arcs[index].offset}
+            />
+          ))}
+        </G>
       </Svg>
       <View style={styles.center}>{children}</View>
     </View>
@@ -45,9 +47,6 @@ export function DonutChart({ segments, size = 132, thickness = 16, accessibility
 }
 
 const styles = StyleSheet.create({
-  turned: {
-    transform: [{ rotate: '-90deg' }],
-  },
   center: {
     position: 'absolute',
     top: 0,
