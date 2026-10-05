@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
 
 import { Radius, Spacing } from '@/constants/theme';
@@ -9,9 +10,11 @@ interface Props {
   disabled?: boolean;
   busy?: boolean;
   variant?: 'primary' | 'ghost' | 'danger';
+  /** Shown before the label. */
+  icon?: ReactNode;
 }
 
-export function Button({ label, onPress, disabled, busy, variant = 'primary' }: Props) {
+export function Button({ label, onPress, disabled, busy, variant = 'primary', icon }: Props) {
   const theme = useTheme();
   const primary = variant === 'primary';
   const labelColor = primary ? theme.onAccent : variant === 'danger' ? theme.danger : theme.text;
@@ -30,7 +33,10 @@ export function Button({ label, onPress, disabled, busy, variant = 'primary' }: 
       {busy ? (
         <ActivityIndicator color={labelColor} />
       ) : (
-        <Text style={[styles.label, { color: labelColor }]}>{label}</Text>
+        <>
+          {icon}
+          <Text style={[styles.label, { color: labelColor }]}>{label}</Text>
+        </>
       )}
     </Pressable>
   );
@@ -39,8 +45,10 @@ export function Button({ label, onPress, disabled, busy, variant = 'primary' }: 
 const styles = StyleSheet.create({
   button: {
     minHeight: 50,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: Spacing.two,
     borderRadius: Radius.medium,
     paddingHorizontal: Spacing.four,
   },

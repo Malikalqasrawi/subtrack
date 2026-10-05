@@ -27,11 +27,12 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
 
-  const complete = displayName.trim() !== '' && email.trim() !== '' && phone.trim() !== '' && isStrongPassword(password);
+  const complete = displayName.trim() !== '' && email.trim() !== '' && phone.trim() !== '' && isStrongPassword(password) && confirm === password;
 
   async function submit() {
     setError(undefined);
@@ -102,6 +103,13 @@ export default function RegisterScreen() {
         autoComplete="new-password"
         error={fieldErrors.password}
         showRules
+      />
+      <PasswordField
+        label="Confirm password"
+        value={confirm}
+        onChange={setConfirm}
+        autoComplete="new-password"
+        error={confirm !== '' && confirm !== password ? 'The passwords do not match' : undefined}
       />
       {error && <Banner message={error} />}
       <Button label="Create account" onPress={submit} busy={submitting} disabled={!complete} />

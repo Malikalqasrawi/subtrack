@@ -1,4 +1,4 @@
-import { fireEvent, screen, userEvent } from '@testing-library/react-native';
+import { act, fireEvent, screen, userEvent } from '@testing-library/react-native';
 
 import { ApiError } from '@/api/client';
 import { authApi } from '@/api/endpoints';
@@ -52,6 +52,7 @@ describe('ForgotPasswordScreen', () => {
 
     await userEvent.type(screen.getByLabelText('Code'), '123456');
     await userEvent.type(screen.getByLabelText('New password'), 'Subtrack#2027');
+    await userEvent.type(screen.getByLabelText('Confirm new password'), 'Subtrack#2027');
     await userEvent.press(screen.getByRole('button', { name: 'Change password' }));
 
     expect(authApi.resetPassword).toHaveBeenCalledWith('demo@subtrack.example', '123456', 'Subtrack#2027');
@@ -63,10 +64,22 @@ describe('ForgotPasswordScreen', () => {
 
     await userEvent.type(screen.getByLabelText('Code'), '12345');
     await userEvent.type(screen.getByLabelText('New password'), 'Subtrack#2027');
+    await userEvent.type(screen.getByLabelText('Confirm new password'), 'Subtrack#2027');
     expect(screen.getByRole('button', { name: 'Change password' })).toBeDisabled();
 
     await userEvent.type(screen.getByLabelText('Code'), '6');
     expect(screen.getByRole('button', { name: 'Change password' })).toBeEnabled();
+  });
+
+  it('keeps the button off while the two passwords differ', async () => {
+    await requestCode();
+
+    await userEvent.type(screen.getByLabelText('Code'), '123456');
+    await userEvent.type(screen.getByLabelText('New password'), 'Subtrack#2027');
+    await userEvent.type(screen.getByLabelText('Confirm new password'), 'Subtrack#2028');
+
+    expect(screen.getByText('The passwords do not match')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Change password' })).toBeDisabled();
   });
 
   it('shows a refused code and stays on the screen', async () => {
@@ -75,9 +88,32 @@ describe('ForgotPasswordScreen', () => {
 
     await userEvent.type(screen.getByLabelText('Code'), '000000');
     await userEvent.type(screen.getByLabelText('New password'), 'Subtrack#2027');
+    await userEvent.type(screen.getByLabelText('Confirm new password'), 'Subtrack#2027');
     await userEvent.press(screen.getByRole('button', { name: 'Change password' }));
 
     expect(await screen.findByText('That code is invalid or has expired')).toBeOnTheScreen();
     expect(mockRouter.dismissTo).not.toHaveBeenCalled();
+  });
+
+  describe('resending the code', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('waits a minute before another code can be asked for', async () => {
+      await requestCode();
+      expect(screen.getByRole('link', { name: 'Resend in 60s' })).toBeDisabled();
+
+      for (let second = 0; second < 60; second++) await act(() => jest.advanceTimersByTimeAsync(1000));
+      await userEvent.press(screen.getByRole('link', { name: 'Resend code' }));
+
+      expect(authApi.forgotPassword).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('A new code is on its way.')).toBeOnTheScreen();
+      expect(screen.getByRole('link', { name: 'Resend in 60s' })).toBeDisabled();
+    });
   });
 });

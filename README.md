@@ -213,7 +213,7 @@ cd frontend && npm run lint && npm test && npm run build
 cd mobile && npm run lint && npm run typecheck && npm test
 ```
 
-101 backend tests, 38 frontend tests and 206 mobile tests. They need no Docker, PostgreSQL, mail server, Google account or network: the backend runs against an in-memory H2 database in PostgreSQL mode, and the frontend and mobile tests replace the API.
+101 backend tests, 38 frontend tests and 213 mobile tests. They need no Docker, PostgreSQL, mail server, Google account or network: the backend runs against an in-memory H2 database in PostgreSQL mode, and the frontend and mobile tests replace the API.
 
 | Backend test | Covers |
 |---|---|
@@ -389,7 +389,7 @@ Before putting this on the internet: serve it over HTTPS, set `COOKIE_SECURE=tru
 - "Today" is the server's UTC date, so a renewal can appear a day early or late for users far from UTC.
 - The per-address sign-in counts live in the backend's memory, like the rate limits, and reset on restart.
 - The phone number is stored but not verified by SMS, which would need a paid SMS provider.
-- Google sign-in has been run against Google from the Android app, not yet from the website. Apple sign-in is covered by tests with a stand-in verifier only, because the real one needs a paid developer account.
+- Google sign-in has been run against Google from the website and the Android app. Apple sign-in is covered by tests with a stand-in verifier only, because the real one needs a paid developer account.
 - Categories are a fixed list.
 
 ## Author

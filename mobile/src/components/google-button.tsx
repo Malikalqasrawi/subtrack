@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { authApi } from '@/api/endpoints';
 import type { AuthResponse } from '@/api/types';
 import { Button } from '@/components/button';
+import { GoogleLogo } from '@/components/google-logo';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { requestGoogleIdToken } from '@/lib/google-sign-in';
@@ -39,7 +40,7 @@ export function GoogleButton({ onResult, onError, disabled }: Props) {
         <Text style={{ color: theme.textMuted }}>or</Text>
         <View style={[styles.line, { backgroundColor: theme.border }]} />
       </View>
-      <Button label="Continue with Google" variant="ghost" onPress={signIn} busy={busy} disabled={disabled} />
+      <Button label="Continue with Google" variant="ghost" icon={<GoogleLogo />} onPress={signIn} busy={busy} disabled={disabled} />
     </>
   );
 }
