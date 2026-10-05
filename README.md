@@ -257,7 +257,7 @@ cd mobile && npm run lint && npm run typecheck && npm test
 | `subscription-list.test.ts`, `calendar.test.ts`, `charts.test.ts`, `brands.test.ts` | Search, filter and sort, month grids, chart geometry, matching a name to a logo |
 | `format.test.ts`, `password.test.ts`, `email.test.ts`, `errors.test.ts` | Dates and money, the password rules, email format, error messages |
 
-CI runs a gitleaks secret scan, all three test suites and a Docker Compose smoke test on every push and pull request, with actions pinned to commits and a read-only token. Dependabot checks the dependencies once a month.
+CI runs a gitleaks secret scan, all three test suites and a Docker Compose smoke test on every push and pull request, with actions pinned to commits and a read-only token.
 
 ## Configuration
 
@@ -401,7 +401,9 @@ Before putting this on the internet: serve it over HTTPS, set `COOKIE_SECURE=tru
 - The phone number is stored but not verified by SMS, which would need a paid SMS provider.
 - Google sign-in has been run against Google from the website and the Android app. Apple sign-in is covered by tests with a stand-in verifier only, because the real one needs a paid developer account.
 - Categories are a fixed list, and an account can keep up to 200 subscriptions.
-- `npm audit` reports advisories in the app's build and test tooling (Metro, Jest and what they depend on) that have no compatible fix yet. They are not part of the installed app; Dependabot is set to propose the fixes once they exist.
+- The app has only been run on Android. It is written for iOS as well, but that build has never been tried.
+- The rate limits and lockouts go by the address nginx sees. Behind another proxy, such as an HTTPS terminator, every visitor would share that proxy's address until nginx is told to trust its forwarded address.
+- `npm audit` reports advisories in the app's build and test tooling (Metro, Jest and what they depend on) that have no compatible fix yet. They are not part of the installed app.
 
 ## Author
 
