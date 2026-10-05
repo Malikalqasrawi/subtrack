@@ -61,6 +61,13 @@ export const Spacing = {
   five: 32,
 } as const;
 
+/** The tab bar floats over the screens, so their content ends this far above the bottom edge. */
+export const TabBar = {
+  height: 64,
+  margin: 16,
+  clearance: 104,
+} as const;
+
 export const Radius = {
   small: 10,
   medium: 12,

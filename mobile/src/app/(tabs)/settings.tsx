@@ -8,7 +8,7 @@ import { PasswordSection } from '@/components/settings/password-section';
 import { ProfileSection } from '@/components/settings/profile-section';
 import { SessionsSection } from '@/components/settings/sessions-section';
 import { TwoFactorSection } from '@/components/settings/two-factor-section';
-import { Spacing } from '@/constants/theme';
+import { Spacing, TabBar } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 export default function SettingsScreen() {
@@ -50,7 +50,7 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: Spacing.three,
-    paddingBottom: Spacing.four,
+    paddingBottom: TabBar.clearance,
     gap: Spacing.three,
   },
 });

@@ -8,7 +8,7 @@ import { LineChart } from '@/components/line-chart';
 import { RenewalTag } from '@/components/renewal-tag';
 import { LoadError, Loading } from '@/components/screen-state';
 import { ServiceIcon } from '@/components/service-icon';
-import { Fonts, Hero, Radius, Spacing } from '@/constants/theme';
+import { Fonts, Hero, Radius, Spacing, TabBar } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { categoryColors } from '@/lib/categories';
@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: Spacing.three,
-    paddingBottom: Spacing.four,
+    paddingBottom: TabBar.clearance,
     gap: Spacing.three,
   },
   hero: {
