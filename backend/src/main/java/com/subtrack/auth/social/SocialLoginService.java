@@ -1,5 +1,7 @@
 package com.subtrack.auth.social;
 
+import com.subtrack.auth.alert.SecurityAlert;
+import com.subtrack.auth.alert.SecurityAlertMailer;
 import com.subtrack.common.error.BadRequestException;
 import com.subtrack.user.User;
 import com.subtrack.user.UserRepository;
@@ -27,12 +29,15 @@ public class SocialLoginService {
 
 	private final PasswordEncoder passwordEncoder;
 
+	private final SecurityAlertMailer alerts;
+
 	public SocialLoginService(List<IdentityTokenVerifier> verifiers, UserRepository users,
-			SocialAccountRepository socialAccounts, PasswordEncoder passwordEncoder) {
+			SocialAccountRepository socialAccounts, PasswordEncoder passwordEncoder, SecurityAlertMailer alerts) {
 		verifiers.forEach(verifier -> this.verifiers.put(verifier.provider(), verifier));
 		this.users = users;
 		this.socialAccounts = socialAccounts;
 		this.passwordEncoder = passwordEncoder;
+		this.alerts = alerts;
 	}
 
 	/** The public client id of every provider that is set up, for the sign-in page. */
@@ -64,11 +69,15 @@ public class SocialLoginService {
 			throw new BadRequestException("EMAIL_NOT_VERIFIED_BY_PROVIDER",
 					"Your " + provider + " account has no verified email address");
 		}
-		User user = users.findByEmail(User.normalizeEmail(identity.email()))
-			.map(this::claimIfUnverified)
+		Optional<User> existing = users.findByEmail(User.normalizeEmail(identity.email()));
+		User user = existing.map(this::claimIfUnverified)
 			.orElseGet(() -> users.save(User.fromSocialSignIn(identity.email(), unusablePasswordHash(),
 					displayName(identity, suggestedName), DEFAULT_CURRENCY)));
 		socialAccounts.save(new SocialAccount(user, provider, identity.subject()));
+		if (existing.isPresent()) {
+			// The account was there before this sign-in, so its owner hears that a new way in exists.
+			alerts.send(user.getEmail(), SecurityAlert.SIGN_IN_METHOD_ADDED);
+		}
 		return user;
 	}
 

@@ -19,7 +19,7 @@ services:
   # Catches every email the app sends and shows it at http://localhost:8025.
   # For real delivery, point the MAIL_* variables at an SMTP provider instead.
   mailpit:
-    image: axllent/mailpit:latest
+    image: axllent/mailpit:v1.31.4
     ports:
       - "127.0.0.1:8025:8025"
       - "127.0.0.1:1025:1025"

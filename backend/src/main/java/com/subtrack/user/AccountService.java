@@ -2,6 +2,7 @@ package com.subtrack.user;
 
 import com.subtrack.auth.AuthSession;
 import com.subtrack.auth.ExistingAccountNotice;
+import com.subtrack.auth.LoginGuard;
 import com.subtrack.auth.alert.SecurityAlert;
 import com.subtrack.auth.alert.SecurityAlertMailer;
 import com.subtrack.auth.session.SessionService;
@@ -9,9 +10,11 @@ import com.subtrack.auth.verification.CodeMailer;
 import com.subtrack.auth.verification.CodePurpose;
 import com.subtrack.auth.verification.VerificationResult;
 import com.subtrack.auth.verification.VerificationService;
+import com.subtrack.common.ClientAddress;
 import com.subtrack.common.error.BadRequestException;
 import com.subtrack.common.error.ForbiddenException;
 import com.subtrack.common.error.TooManyRequestsException;
+import java.time.Clock;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -38,9 +41,13 @@ public class AccountService {
 
 	private final ExistingAccountNotice existingAccountNotice;
 
+	private final LoginGuard loginGuard;
+
+	private final Clock clock;
+
 	public AccountService(UserRepository users, UserService userService, PasswordEncoder passwordEncoder,
 			VerificationService verificationService, CodeMailer codeMailer, SessionService sessions,
-			SecurityAlertMailer alerts, ExistingAccountNotice existingAccountNotice) {
+			SecurityAlertMailer alerts, ExistingAccountNotice existingAccountNotice, LoginGuard loginGuard, Clock clock) {
 		this.users = users;
 		this.userService = userService;
 		this.passwordEncoder = passwordEncoder;
@@ -49,6 +56,8 @@ public class AccountService {
 		this.sessions = sessions;
 		this.alerts = alerts;
 		this.existingAccountNotice = existingAccountNotice;
+		this.loginGuard = loginGuard;
+		this.clock = clock;
 	}
 
 	/** For sensitive steps handled outside this class, such as starting two-factor setup. */
@@ -139,7 +148,12 @@ public class AccountService {
 			verificationService.verify(user, CodePurpose.ACCOUNT_CONFIRMATION, confirmationCode).requireVerified();
 			return;
 		}
+		// Wrong passwords count and lock like wrong passwords at sign-in. Otherwise a stolen
+		// session could be used to guess the password without any limit.
+		String address = ClientAddress.current();
+		loginGuard.requireNotLocked(user, address, clock.instant());
 		if (currentPassword == null || !passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+			userService.recordWrongPassword(user.getId(), address);
 			throw new ForbiddenException("WRONG_PASSWORD", "Your current password is incorrect");
 		}
 	}

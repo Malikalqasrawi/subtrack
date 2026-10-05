@@ -215,18 +215,18 @@ cd frontend && npm run lint && npm test && npm run build
 cd mobile && npm run lint && npm run typecheck && npm test
 ```
 
-130 backend tests, 43 frontend tests and 215 mobile tests. They need no mail server or Google account. The backend tests need Docker: they start a throwaway PostgreSQL 17 (Testcontainers; Colima is picked up by itself) and connect to it the way the deployed application does. The frontend and mobile tests replace the API.
+142 backend tests, 43 frontend tests and 215 mobile tests. They need no mail server or Google account. The backend tests need Docker: they start a throwaway PostgreSQL 17 (Testcontainers; Colima is picked up by itself) and connect to it the way the deployed application does. The frontend and mobile tests replace the API.
 
 | Backend test | Covers |
 |---|---|
 | `ApiIntegrationTest` | End-to-end over HTTP: sign-up and verification, password rules, password reset, two-factor sign-in, lockouts per network address, token versions and sign-out everywhere, email and password changes, the same answers with or without an account (lockouts, reset codes, email change), the emailed code that accounts without a password confirm them with, security alerts, limits on emailed codes, clean-up of unverified sign-ups, account deletion, token rotation, per-user data isolation, insights, reminders |
-| `LoginGuardTest` | Lockout per network address, the account-wide backstop, counts that expire or reset |
+| `LoginGuardTest` | Lockout per network address, the account-wide backstop, counts that expire or reset, emails without an account locked the same way |
 | `SecretBoxTest` | AES-GCM encryption of stored secrets, older plain values, a wrong key or changed data, a missing key |
-| `ProductionChecksTest` | Production mode refusing codes in the log and an insecure cookie |
+| `ProductionChecksTest` | Production mode refusing codes in the log, an insecure cookie and each secret of the `dev` profile |
 | `SubscriptionRowSecurityTest` | Row level security: no rows without a user, only the user's own rows from a query with no filter, another user's row cannot be read, changed, deleted, created or taken over, scheduled jobs and account deletion still work |
 | `ApplicationRoleTest` | The application's database login: not a superuser and not the owner, reads and writes rows, cannot change the schema, create logins or run server programs |
 | `TotpAuthenticatorTest` | Authenticator codes against the RFC 6238 test values, one step of clock drift, used and wrong codes, Base32 secrets |
-| `SocialLoginServiceTest` | Google and Apple sign-in: new accounts, linking by verified email, unverified sign-ups |
+| `SocialLoginServiceTest` | Google and Apple sign-in: new accounts, linking by verified email, unverified sign-ups, the alert when a provider is first linked to an existing account |
 | `StrongPasswordValidatorTest` | The password policy |
 | `BillingCycleTest` | Billing-date arithmetic for weekly, monthly, quarterly and yearly cycles, including month ends |
 | `SubscriptionReminderTest` | When a renewal needs a reminder, and that it is sent once |
@@ -257,7 +257,7 @@ cd mobile && npm run lint && npm run typecheck && npm test
 | `subscription-list.test.ts`, `calendar.test.ts`, `charts.test.ts`, `brands.test.ts` | Search, filter and sort, month grids, chart geometry, matching a name to a logo |
 | `format.test.ts`, `password.test.ts`, `email.test.ts`, `errors.test.ts` | Dates and money, the password rules, email format, error messages |
 
-CI runs a gitleaks secret scan, all three test suites and a Docker Compose smoke test on every push and pull request, with actions pinned to commits and a read-only token.
+CI runs a gitleaks secret scan, all three test suites and a Docker Compose smoke test on every push and pull request, with actions pinned to commits and a read-only token. Dependabot checks the dependencies once a month.
 
 ## Configuration
 
@@ -267,7 +267,7 @@ All settings are environment variables read by the backend. Defaults live in `ba
 |---|---|---|
 | `JWT_SECRET` | none, required | Signs access tokens. At least 32 characters. The app will not start without it. |
 | `ENCRYPTION_KEY` | none, required | 32 random bytes in Base64. Encrypts two-factor secrets. Keep it: with another key, two-factor sign-ins stop working. |
-| `PRODUCTION` | `false` | `true` on a real server: refuses to start unless `MAIL_MODE` is `smtp` and `COOKIE_SECURE` is `true` |
+| `PRODUCTION` | `false` | `true` on a real server: refuses to start unless `MAIL_MODE` is `smtp`, `COOKIE_SECURE` is `true`, and the secrets are your own instead of the `dev` profile's |
 | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | local `subtrack` database | PostgreSQL address, and the owner of the schema, used only to run the migrations |
 | `DB_APP_USERNAME`, `DB_APP_PASSWORD` | `subtrack_app`, password required | The login the application uses for everything else. Created after the migrations with rights to read and write rows only |
 | `MAIL_MODE` | `smtp` | `smtp` sends email, `log` prints it to the console |
@@ -379,9 +379,9 @@ Errors always have the same shape:
 - **Limits on emailed codes**: 10 attempts per hour for each kind of code (asking for a new code does not reset the count), 5 codes a day per account, and 10 requests an hour per network address for the three requests that send one (sign-up, resend, forgotten password). The whole app sends at most 100 codes an hour to confirmed accounts and 50 to addresses nobody has confirmed yet, so sign-ups with made-up addresses cannot use up the codes of real accounts or the mail provider's sending limit.
 - **A copy of the database is not enough**: emailed codes and refresh tokens are stored as hashes, and two-factor secrets are encrypted with AES-256-GCM using `ENCRYPTION_KEY`, which never touches the database. Secrets saved before that are encrypted at startup. An email waiting in the outbox is encrypted the same way, because it can hold a code, and its text is erased once it is sent.
 - **Nobody can hold on to someone else's email**: a sign-up that was never verified is replaced by a newer one for the same address, and deleted after 48 hours. Names are letters only, so they cannot carry a link.
-- **Security alerts**: an email is sent when the password, the email address (to the old address) or two-factor authentication changes.
+- **Security alerts**: an email is sent when the password, the email address (to the old address) or two-factor authentication changes, and the first time Google or Apple is used to sign in to an account that already existed.
 - **Two-factor authentication** is optional and uses an authenticator app (TOTP). A used code cannot be replayed, eight single-use recovery codes cover a lost phone, guesses are limited to 5 per account every 5 minutes, and it applies to Google and Apple sign-ins too.
-- **Sensitive changes** (email, password, turning on two-factor, deleting the account) ask for the current password. An account created with Google or Apple has no password, so it confirms them with a 6-digit code emailed to its address instead; the code works once and falls under the same limits as the other codes. A new email only takes effect after a code sent to it is confirmed.
+- **Sensitive changes** (email, password, turning on two-factor, deleting the account) ask for the current password. Wrong ones count and lock like wrong passwords at sign-in, so a stolen session cannot be used to guess it. An account created with Google or Apple has no password, so it confirms them with a 6-digit code emailed to its address instead; the code works once and falls under the same limits as the other codes. A new email only takes effect after a code sent to it is confirmed.
 - **Email verification**: a 6-digit code that expires after 15 minutes, allows 5 wrong attempts, and can be resent once every 60 seconds. An account cannot sign in until it is verified.
 - **No account discovery**: registering an email that already exists, resending a code, and asking for a password reset respond the same way whether or not the account exists, and take about the same time: emails are sent in the background and a request that sends nothing does the same hashing work. The owner of an address that is already registered is told by email instead, once a day at most. Sign-in gives one error for both a wrong password and an unknown email, and an email without an account is counted and locked out exactly like a real one. A wrong password-reset code gets one answer whatever is wrong with it, with the same limits for an email that has no account. Changing your email to an address that already has an account is answered like any other request: no code is sent, and the owner of that address is told instead.
 - **Emails to unconfirmed addresses** carry no text chosen by the person who signed up, so the app cannot be used to send someone else a message.
@@ -400,7 +400,8 @@ Before putting this on the internet: serve it over HTTPS, set `COOKIE_SECURE=tru
 - The per-address sign-in counts live in the backend's memory, like the rate limits, and reset on restart.
 - The phone number is stored but not verified by SMS, which would need a paid SMS provider.
 - Google sign-in has been run against Google from the website and the Android app. Apple sign-in is covered by tests with a stand-in verifier only, because the real one needs a paid developer account.
-- Categories are a fixed list.
+- Categories are a fixed list, and an account can keep up to 200 subscriptions.
+- `npm audit` reports advisories in the app's build and test tooling (Metro, Jest and what they depend on) that have no compatible fix yet. They are not part of the installed app; Dependabot is set to propose the fixes once they exist.
 
 ## Author
 

@@ -17,6 +17,8 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, UUID
 	/** Looking up by owner as well as id means one user can never reach another user's data. */
 	Optional<Subscription> findByIdAndUserId(UUID id, UUID userId);
 
+	long countByUserId(UUID userId);
+
 	@Query("""
 			select s from Subscription s join fetch s.user
 			where s.status = com.subtrack.subscription.SubscriptionStatus.ACTIVE

@@ -1,5 +1,6 @@
 package com.subtrack.auth;
 
+import com.subtrack.common.error.TooManyRequestsException;
 import com.subtrack.config.AppProperties;
 import com.subtrack.user.User;
 import java.time.Duration;
@@ -69,6 +70,16 @@ public class LoginGuard {
 		this.maxAttemptsPerAddress = maxAttemptsPerAddress;
 		this.maxAttemptsPerAccount = maxAttemptsPerAccount;
 		this.lockDuration = lockDuration;
+	}
+
+	/** Refuses the request while this user is locked for this address. */
+	public void requireNotLocked(User user, String address, Instant now) {
+		refuse(lockedUntil(user, address, now), now);
+	}
+
+	/** The same for an email that has no account. */
+	public void requireNotLocked(String email, String address, Instant now) {
+		refuse(lockedUntil(email, address, now), now);
 	}
 
 	/** When the lock for this user and address ends, if there is one now. */
@@ -143,6 +154,14 @@ public class LoginGuard {
 		synchronized (counted) {
 			return counted.lockedUntil != null && now.isBefore(counted.lockedUntil) ? counted.lockedUntil : null;
 		}
+	}
+
+	private static void refuse(Optional<Instant> lockedUntil, Instant now) {
+		lockedUntil.ifPresent(until -> {
+			long minutes = Math.max(1, Duration.between(now, until).plusSeconds(59).toMinutes());
+			throw new TooManyRequestsException("ACCOUNT_LOCKED", "Too many wrong attempts. Try again in " + minutes
+					+ (minutes == 1 ? " minute" : " minutes") + ", or reset your password.");
+		});
 	}
 
 	private static Optional<Instant> later(Instant first, Instant second) {

@@ -18,6 +18,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class SubscriptionService {
 
+	/** Far more than anyone pays for. It keeps a single account from filling the table. */
+	public static final int MAX_PER_ACCOUNT = 200;
+
 	private final SubscriptionRepository subscriptions;
 
 	private final UserService userService;
@@ -57,6 +60,10 @@ public class SubscriptionService {
 	public SubscriptionResponse create(UUID userId, SubscriptionRequest request) {
 		rowAccess.asUser(userId);
 		requireSupportedCurrency(request.currency());
+		if (subscriptions.countByUserId(userId) >= MAX_PER_ACCOUNT) {
+			throw new BadRequestException("SUBSCRIPTION_LIMIT",
+					"You can keep up to " + MAX_PER_ACCOUNT + " subscriptions. Delete one to add another.");
+		}
 		User user = userService.getById(userId);
 		Subscription subscription = subscriptions.save(new Subscription(user, request.toDetails()));
 		return toResponse(subscription, user);

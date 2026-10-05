@@ -12,7 +12,9 @@ public enum SecurityAlert {
 			"Two-factor authentication was just turned on for your Subtrack account."),
 
 	TWO_FACTOR_DISABLED("Two-factor authentication is off",
-			"Two-factor authentication was just turned off for your Subtrack account.");
+			"Two-factor authentication was just turned off for your Subtrack account."),
+	SIGN_IN_METHOD_ADDED("A new way to sign in to your Subtrack account",
+			"Someone just signed in to your Subtrack account with Google or Apple for the first time. From now on that sign-in opens your account too.");
 
 	private final String subject;
 
