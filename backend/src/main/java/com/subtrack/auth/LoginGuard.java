@@ -20,11 +20,20 @@ import org.springframework.stereotype.Component;
  *
  * The per-address counts are kept in memory, like the rate limits, and reset on restart. The
  * account-wide count is stored with the user.
+ *
+ * An email that has no account is counted and locked the same way, entirely in memory.
+ * Otherwise the lock itself would show which emails have an account.
  */
 @Component
 public class LoginGuard {
 
 	private static final int CLEANUP_EVERY_N_CALLS = 1_000;
+
+	/** Stands in for the address in the count that covers every address. */
+	private static final String EVERYWHERE = "*";
+
+	/** How long the count for an email without an account is remembered across all addresses. */
+	private static final Duration UNKNOWN_ACCOUNT_MEMORY = Duration.ofDays(1);
 
 	private final int maxAttemptsPerAddress;
 
@@ -36,14 +45,15 @@ public class LoginGuard {
 
 	private final AtomicLong calls = new AtomicLong();
 
-	private record Key(UUID userId, String address) {
+	/** @param account a user's id, or the email itself when no account has it */
+	private record Key(Object account, String address) {
 	}
 
 	private static final class Attempts {
 
 		private int wrong;
 
-		private Instant firstWrongAt;
+		private Instant countEndsAt;
 
 		private Instant lockedUntil;
 
@@ -63,19 +73,14 @@ public class LoginGuard {
 
 	/** When the lock for this user and address ends, if there is one now. */
 	public Optional<Instant> lockedUntil(User user, String address, Instant now) {
-		Instant until = null;
-		Attempts here = attempts.get(new Key(user.getId(), address));
-		if (here != null) {
-			synchronized (here) {
-				if (here.lockedUntil != null && now.isBefore(here.lockedUntil)) {
-					until = here.lockedUntil;
-				}
-			}
-		}
-		if (user.isLoginLocked(now) && (until == null || user.getLoginLockedUntil().isAfter(until))) {
-			until = user.getLoginLockedUntil();
-		}
-		return Optional.ofNullable(until);
+		Instant here = lockOf(new Key(user.getId(), address), now);
+		Instant everywhere = user.isLoginLocked(now) ? user.getLoginLockedUntil() : null;
+		return later(here, everywhere);
+	}
+
+	/** The same question for an email that has no account. */
+	public Optional<Instant> lockedUntil(String email, String address, Instant now) {
+		return later(lockOf(new Key(email, address), now), lockOf(new Key(email, EVERYWHERE), now));
 	}
 
 	/**
@@ -83,25 +88,17 @@ public class LoginGuard {
 	 * @return true if this attempt started a lock
 	 */
 	public boolean recordWrong(User user, String address, Instant now) {
-		Instant lockUntil = now.plus(lockDuration);
-		boolean locked;
-		Attempts here = attempts.computeIfAbsent(new Key(user.getId(), address), key -> new Attempts());
-		synchronized (here) {
-			if (here.firstWrongAt == null || !now.isBefore(here.firstWrongAt.plus(lockDuration))) {
-				here.wrong = 0;
-				here.firstWrongAt = now;
-			}
-			here.wrong++;
-			locked = here.wrong >= maxAttemptsPerAddress;
-			if (locked) {
-				here.lockedUntil = lockUntil;
-				here.wrong = 0;
-				here.firstWrongAt = null;
-			}
-		}
-		boolean lockedEverywhere = user.recordFailedLogin(maxAttemptsPerAccount, lockUntil);
+		boolean locked = count(new Key(user.getId(), address), maxAttemptsPerAddress, lockDuration, now);
+		boolean lockedEverywhere = user.recordFailedLogin(maxAttemptsPerAccount, now.plus(lockDuration));
 		cleanUp(now);
 		return locked || lockedEverywhere;
+	}
+
+	/** Counts a wrong password for an email that has no account. */
+	public void recordWrong(String email, String address, Instant now) {
+		count(new Key(email, address), maxAttemptsPerAddress, lockDuration, now);
+		count(new Key(email, EVERYWHERE), maxAttemptsPerAccount, UNKNOWN_ACCOUNT_MEMORY, now);
+		cleanUp(now);
 	}
 
 	/** A correct password (when no code step follows) or a correct code. The caller saves the user. */
@@ -112,7 +109,47 @@ public class LoginGuard {
 
 	/** Proving the email through a password reset lifts the locks on every address. */
 	public void clearAddresses(UUID userId) {
-		attempts.keySet().removeIf(key -> Objects.equals(key.userId(), userId));
+		attempts.keySet().removeIf(key -> Objects.equals(key.account(), userId));
+	}
+
+	/**
+	 * Counts one wrong attempt.
+	 * @param memory how long attempts keep counting before the count starts again
+	 * @return true if this attempt started a lock
+	 */
+	private boolean count(Key key, int maxAttempts, Duration memory, Instant now) {
+		Attempts counted = attempts.computeIfAbsent(key, created -> new Attempts());
+		synchronized (counted) {
+			if (counted.countEndsAt == null || !now.isBefore(counted.countEndsAt)) {
+				counted.wrong = 0;
+				counted.countEndsAt = now.plus(memory);
+			}
+			counted.wrong++;
+			if (counted.wrong < maxAttempts) {
+				return false;
+			}
+			counted.lockedUntil = now.plus(lockDuration);
+			counted.wrong = 0;
+			counted.countEndsAt = null;
+			return true;
+		}
+	}
+
+	private Instant lockOf(Key key, Instant now) {
+		Attempts counted = attempts.get(key);
+		if (counted == null) {
+			return null;
+		}
+		synchronized (counted) {
+			return counted.lockedUntil != null && now.isBefore(counted.lockedUntil) ? counted.lockedUntil : null;
+		}
+	}
+
+	private static Optional<Instant> later(Instant first, Instant second) {
+		if (first == null || second == null) {
+			return Optional.ofNullable(first == null ? second : first);
+		}
+		return Optional.of(first.isAfter(second) ? first : second);
 	}
 
 	private void cleanUp(Instant now) {
@@ -122,8 +159,7 @@ public class LoginGuard {
 		attempts.values().removeIf(entry -> {
 			synchronized (entry) {
 				boolean lockOver = entry.lockedUntil == null || !now.isBefore(entry.lockedUntil);
-				boolean countOver = entry.firstWrongAt == null
-						|| !now.isBefore(entry.firstWrongAt.plus(lockDuration));
+				boolean countOver = entry.countEndsAt == null || !now.isBefore(entry.countEndsAt);
 				return lockOver && countOver;
 			}
 		});

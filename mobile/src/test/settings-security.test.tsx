@@ -204,15 +204,17 @@ describe('email address', () => {
     expect(userApi.requestEmailChange).not.toHaveBeenCalled();
   });
 
-  it('says when the new address already belongs to an account', async () => {
-    jest.mocked(userApi.requestEmailChange).mockRejectedValue(new ApiError(409, 'EMAIL_IN_USE', 'That email address is already in use'));
+  it('says why when the change could not be started', async () => {
+    jest
+      .mocked(userApi.requestEmailChange)
+      .mockRejectedValue(new ApiError(429, 'RATE_LIMITED', 'Wait a minute before requesting another code'));
     await renderScreen(<EmailSection />);
 
-    await userEvent.type(screen.getByLabelText('New email'), 'taken@subtrack.example');
+    await userEvent.type(screen.getByLabelText('New email'), 'new@subtrack.example');
     await userEvent.type(screen.getByLabelText('Current password'), PASSWORD);
     await userEvent.press(screen.getByRole('button', { name: 'Send confirmation code' }));
 
-    expect(await screen.findByText('That email address is already in use')).toBeOnTheScreen();
+    expect(await screen.findByText('Wait a minute before requesting another code')).toBeOnTheScreen();
     expect(screen.queryByLabelText('Code')).not.toBeOnTheScreen();
   });
 

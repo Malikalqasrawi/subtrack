@@ -87,4 +87,29 @@ class LoginGuardTest {
 		assertThat(guard.lockedUntil(user, HOME, now)).isEmpty();
 	}
 
+	@Test
+	void anEmailWithoutAnAccountIsLockedLikeARealOne() {
+		for (int i = 0; i < 4; i++) {
+			guard.recordWrong("nobody@example.com", ATTACKER, now);
+		}
+		assertThat(guard.lockedUntil("nobody@example.com", ATTACKER, now)).isEmpty();
+		guard.recordWrong("nobody@example.com", ATTACKER, now);
+
+		assertThat(guard.lockedUntil("nobody@example.com", ATTACKER, now)).contains(now.plus(LOCK));
+		assertThat(guard.lockedUntil("nobody@example.com", HOME, now)).isEmpty();
+		assertThat(guard.lockedUntil("someone-else@example.com", ATTACKER, now)).isEmpty();
+		assertThat(guard.lockedUntil("nobody@example.com", ATTACKER, now.plus(LOCK))).isEmpty();
+	}
+
+	@Test
+	void thirtyWrongAttemptsLockAnEmailWithoutAnAccountEverywhereToo() {
+		for (int i = 0; i < 29; i++) {
+			guard.recordWrong("nobody@example.com", "198.51.100." + i, now);
+		}
+		assertThat(guard.lockedUntil("nobody@example.com", HOME, now)).isEmpty();
+		guard.recordWrong("nobody@example.com", "198.51.100.200", now);
+
+		assertThat(guard.lockedUntil("nobody@example.com", HOME, now)).contains(now.plus(LOCK));
+	}
+
 }
