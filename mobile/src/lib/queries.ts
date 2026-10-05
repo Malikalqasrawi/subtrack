@@ -34,6 +34,16 @@ export function useLoadedSubscription(id: string): Subscription | undefined {
   return subscription;
 }
 
+/**
+ * The subscription as it is in the list now, so an edit shows at once. Once it has been deleted
+ * the copy from when the screen opened is kept, for the moment the screen takes to close.
+ */
+export function useSubscription(id: string): Subscription | undefined {
+  const loaded = useLoadedSubscription(id);
+  const { data: subscriptions } = useSubscriptions();
+  return subscriptions?.find((candidate) => candidate.id === id) ?? loaded;
+}
+
 /** Creates a subscription, or updates the one with the given id. */
 export function useSaveSubscription() {
   const client = useQueryClient();

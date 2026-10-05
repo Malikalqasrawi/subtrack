@@ -1,6 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, userEvent } from '@testing-library/react-native';
-import { Alert } from 'react-native';
+import { render, screen, userEvent } from '@testing-library/react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ApiError } from '@/api/client';
@@ -100,22 +99,5 @@ describe('SubscriptionForm', () => {
 
     expect(await screen.findByText('must not contain line breaks')).toBeOnTheScreen();
     expect(mockBack).not.toHaveBeenCalled();
-  });
-
-  it('deletes only after the confirmation is accepted', async () => {
-    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-    jest.mocked(subscriptionApi.remove).mockResolvedValue(undefined);
-    await renderForm(subscription({ id: 'sub-9', name: 'JetBrains' }));
-
-    await userEvent.press(screen.getByRole('button', { name: 'Delete subscription' }));
-
-    expect(alert).toHaveBeenCalledWith('Delete JetBrains?', expect.any(String), expect.any(Array));
-    expect(subscriptionApi.remove).not.toHaveBeenCalled();
-
-    const buttons = alert.mock.calls[0][2] ?? [];
-    await act(async () => buttons.find((button) => button.style === 'destructive')?.onPress?.());
-
-    expect(subscriptionApi.remove).toHaveBeenCalledWith('sub-9');
-    expect(mockBack).toHaveBeenCalled();
   });
 });

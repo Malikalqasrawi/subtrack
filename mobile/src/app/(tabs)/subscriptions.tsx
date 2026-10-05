@@ -10,7 +10,7 @@ import { Chips } from '@/components/chips';
 import { RenewalTag } from '@/components/renewal-tag';
 import { LoadError, Loading } from '@/components/screen-state';
 import { ServiceIcon } from '@/components/service-icon';
-import { Fonts, Radius, Spacing } from '@/constants/theme';
+import { Fonts, Radius, Spacing, TabBar } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { categoryLabel, cycleUnit, formatDate, formatMoney, statusLabel } from '@/lib/format';
 import { useSubscriptions } from '@/lib/queries';
@@ -94,7 +94,7 @@ export default function SubscriptionsScreen() {
           renderItem={({ item }) => (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`Edit ${item.name}`}
+              accessibilityLabel={`Open ${item.name}`}
               onPress={() => router.push({ pathname: '/subscription/[id]', params: { id: item.id } })}
               style={({ pressed }) => pressed && styles.pressed}>
               <SubscriptionCard subscription={item} />
@@ -206,8 +206,8 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: Spacing.three,
-    // Room for the add button, so it never covers the last card.
-    paddingBottom: 96,
+    // Room for the tab bar and the add button above it, so they never cover the last card.
+    paddingBottom: TabBar.clearance + 72,
     gap: Spacing.three,
   },
   empty: {
@@ -220,7 +220,7 @@ const styles = StyleSheet.create({
   add: {
     position: 'absolute',
     right: Spacing.three,
-    bottom: Spacing.three,
+    bottom: TabBar.clearance,
     width: 58,
     height: 58,
     alignItems: 'center',

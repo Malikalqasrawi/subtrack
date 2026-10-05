@@ -8,7 +8,7 @@ import { Banner } from '@/components/banner';
 import { Card } from '@/components/card';
 import { ServiceIcon } from '@/components/service-icon';
 import { TextLink } from '@/components/text-link';
-import { Fonts, Radius, Spacing } from '@/constants/theme';
+import { Fonts, Radius, Spacing, TabBar } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { WEEKDAYS, addMonths, groupByDate, monthWeeks, startOfMonth } from '@/lib/calendar';
 import { formatDate, formatMoney, toIsoDate } from '@/lib/format';
@@ -213,7 +213,7 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: Spacing.three,
-    paddingBottom: Spacing.four,
+    paddingBottom: TabBar.clearance,
     gap: Spacing.three,
   },
   monthNav: {

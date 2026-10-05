@@ -1,7 +1,7 @@
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ApiError } from '@/api/client';
@@ -15,7 +15,7 @@ import { TextField } from '@/components/text-field';
 import { Fonts, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { categoryLabel, cycleLabel, statusLabel } from '@/lib/format';
-import { useCurrencies, useDeleteSubscription, useSaveSubscription } from '@/lib/queries';
+import { useCurrencies, useSaveSubscription } from '@/lib/queries';
 import {
   PRESETS,
   REMINDER_OPTIONS,
@@ -46,8 +46,6 @@ export function SubscriptionForm({ subscription }: Props) {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [error, setError] = useState<string>();
   const save = useSaveSubscription();
-  const remove = useDeleteSubscription();
-  const busy = save.isPending || remove.isPending;
 
   const set =
     <Key extends keyof SubscriptionFormValues>(field: Key) =>
@@ -74,27 +72,6 @@ export function SubscriptionForm({ subscription }: Props) {
       if (err instanceof ApiError && Object.keys(err.fieldErrors).length > 0) setFieldErrors(err.fieldErrors);
       else setError(err instanceof Error ? err.message : 'Could not save the subscription');
     }
-  }
-
-  async function deleteSubscription(id: string) {
-    setError(undefined);
-    try {
-      await remove.mutateAsync(id);
-      router.back();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not delete the subscription');
-    }
-  }
-
-  function confirmDelete(target: Subscription) {
-    Alert.alert(
-      `Delete ${target.name}?`,
-      'It will be removed from your totals, calendar and reminders. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteSubscription(target.id) },
-      ],
-    );
   }
 
   return (
@@ -209,16 +186,7 @@ export function SubscriptionForm({ subscription }: Props) {
             </Text>
           )}
 
-          <Button label="Save" onPress={submit} busy={save.isPending} disabled={busy} />
-          {subscription && (
-            <Button
-              label="Delete subscription"
-              variant="danger"
-              onPress={() => confirmDelete(subscription)}
-              busy={remove.isPending}
-              disabled={busy}
-            />
-          )}
+          <Button label="Save" onPress={submit} busy={save.isPending} />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

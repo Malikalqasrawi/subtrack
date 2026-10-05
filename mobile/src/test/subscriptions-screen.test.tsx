@@ -28,7 +28,7 @@ async function renderList() {
   await screen.findByText('Netflix');
 }
 
-const shownNames = () => screen.getAllByRole('button', { name: /^Edit / }).map((card) => card.props.accessibilityLabel);
+const shownNames = () => screen.getAllByRole('button', { name: /^Open / }).map((card) => card.props.accessibilityLabel);
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -45,7 +45,7 @@ describe('SubscriptionsScreen', () => {
     await renderList();
 
     expect(screen.getByText('3 in total · $50.99 a month')).toBeOnTheScreen();
-    expect(shownNames()).toEqual(['Edit Gym', 'Edit Netflix', 'Edit Spotify']);
+    expect(shownNames()).toEqual(['Open Gym', 'Open Netflix', 'Open Spotify']);
     expect(screen.getByText('Today')).toBeOnTheScreen();
     expect(screen.getByText('In 10 days')).toBeOnTheScreen();
   });
@@ -54,7 +54,7 @@ describe('SubscriptionsScreen', () => {
     await renderList();
 
     await userEvent.type(screen.getByLabelText('Search subscriptions'), 'net');
-    expect(shownNames()).toEqual(['Edit Netflix']);
+    expect(shownNames()).toEqual(['Open Netflix']);
 
     await userEvent.press(screen.getByRole('button', { name: 'Clear search' }));
     expect(shownNames()).toHaveLength(3);
@@ -65,7 +65,7 @@ describe('SubscriptionsScreen', () => {
 
     await userEvent.press(screen.getByRole('radio', { name: 'Paused' }));
 
-    expect(shownNames()).toEqual(['Edit Spotify']);
+    expect(shownNames()).toEqual(['Open Spotify']);
   });
 
   it('says so when nothing matches', async () => {
@@ -82,7 +82,7 @@ describe('SubscriptionsScreen', () => {
     await userEvent.press(screen.getByRole('button', { name: /^Sorted by next renewal/ }));
 
     expect(screen.getByText('Highest price')).toBeOnTheScreen();
-    expect(shownNames()).toEqual(['Edit Gym', 'Edit Netflix', 'Edit Spotify']);
+    expect(shownNames()).toEqual(['Open Gym', 'Open Netflix', 'Open Spotify']);
 
     await userEvent.press(screen.getByRole('button', { name: /^Sorted by highest price/ }));
     expect(screen.getByText('Name')).toBeOnTheScreen();
@@ -91,7 +91,7 @@ describe('SubscriptionsScreen', () => {
   it('opens a subscription, and the form for a new one', async () => {
     await renderList();
 
-    await userEvent.press(screen.getByRole('button', { name: 'Edit Netflix' }));
+    await userEvent.press(screen.getByRole('button', { name: 'Open Netflix' }));
     expect(mockRouter.push).toHaveBeenCalledWith({ pathname: '/subscription/[id]', params: { id: '1' } });
 
     await userEvent.press(screen.getByRole('button', { name: 'Add subscription' }));
