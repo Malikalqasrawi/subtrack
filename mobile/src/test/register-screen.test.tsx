@@ -2,14 +2,20 @@ import { screen, userEvent } from '@testing-library/react-native';
 
 import { ApiError } from '@/api/client';
 import { authApi } from '@/api/endpoints';
+import type { Session } from '@/api/types';
 import RegisterScreen from '@/app/register';
+import { requestGoogleIdToken } from '@/lib/google-sign-in';
 import { pendingVerification } from '@/session/pending-verification';
+import { user } from '@/test/fixtures';
 import { renderScreen } from '@/test/render-screen';
 
 const mockRouter = { push: jest.fn(), dismissTo: jest.fn() };
+const mockSignIn = jest.fn();
 
 jest.mock('@/api/endpoints');
+jest.mock('@/lib/google-sign-in');
 jest.mock('expo-router', () => ({ useRouter: () => mockRouter }));
+jest.mock('@/session/session-context', () => ({ useSession: () => ({ signIn: mockSignIn }) }));
 
 const PASSWORD = 'Subtrack#2026';
 
@@ -82,5 +88,29 @@ describe('RegisterScreen', () => {
     expect(await screen.findByText('can only contain letters, spaces, apostrophes and hyphens')).toBeOnTheScreen();
     expect(mockRouter.push).not.toHaveBeenCalled();
     expect(pendingVerification.get()).toBeNull();
+  });
+
+  it('starts the session for an account created with Google', async () => {
+    const session: Session = { accessToken: 'access', expiresInSeconds: 900, user: user(), refreshToken: 'refresh' };
+    jest.mocked(requestGoogleIdToken).mockResolvedValue('id-token');
+    jest.mocked(authApi.google).mockResolvedValue({ ...session, twoFactorRequired: false });
+    await renderScreen(<RegisterScreen />);
+
+    await userEvent.press(screen.getByRole('button', { name: 'Continue with Google' }));
+
+    expect(authApi.google).toHaveBeenCalledWith('id-token');
+    expect(mockSignIn).toHaveBeenCalledWith(expect.objectContaining({ refreshToken: 'refresh' }));
+    expect(authApi.register).not.toHaveBeenCalled();
+  });
+
+  it('sends a Google account with two-factor on to the code step', async () => {
+    jest.mocked(requestGoogleIdToken).mockResolvedValue('id-token');
+    jest.mocked(authApi.google).mockResolvedValue({ twoFactorRequired: true, challengeToken: 'challenge' });
+    await renderScreen(<RegisterScreen />);
+
+    await userEvent.press(screen.getByRole('button', { name: 'Continue with Google' }));
+
+    expect(mockRouter.dismissTo).toHaveBeenCalledWith({ pathname: '/sign-in', params: { challengeToken: 'challenge' } });
+    expect(mockSignIn).not.toHaveBeenCalled();
   });
 });

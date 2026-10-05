@@ -8,12 +8,12 @@ import type { AuthResponse } from '@/api/types';
 import { AuthScreen } from '@/components/auth-screen';
 import { Banner } from '@/components/banner';
 import { Button } from '@/components/button';
+import { GoogleButton } from '@/components/google-button';
 import { PasswordField } from '@/components/password-field';
 import { TextField } from '@/components/text-field';
 import { TextLink } from '@/components/text-link';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { requestGoogleIdToken } from '@/lib/google-sign-in';
 import { pendingVerification } from '@/session/pending-verification';
 import { useSession } from '@/session/session-context';
 
@@ -21,10 +21,12 @@ export default function SignInScreen() {
   const { signIn } = useSession();
   const theme = useTheme();
   const router = useRouter();
-  const { passwordChanged } = useLocalSearchParams<{ passwordChanged?: string }>();
+  const params = useLocalSearchParams<{ passwordChanged?: string; challengeToken?: string }>();
+  const { passwordChanged } = params;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [challengeToken, setChallengeToken] = useState<string>();
+  // A Google sign-up for an account with two-factor on arrives here with its challenge.
+  const [challengeToken, setChallengeToken] = useState(params.challengeToken);
   const [code, setCode] = useState('');
   const [error, setError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
@@ -68,12 +70,6 @@ export default function SignInScreen() {
         router.push('/verify-email');
       }
     }, 'Could not sign in');
-
-  const submitGoogle = () =>
-    submit(true, async () => {
-      const idToken = await requestGoogleIdToken();
-      if (idToken) await onResult(await authApi.google(idToken));
-    }, 'Could not sign in with Google');
 
   const submitCode = () =>
     submit(canCheckCode, async () => {
@@ -134,12 +130,7 @@ export default function SignInScreen() {
       </View>
       {error && <Banner message={error} />}
       <Button label="Sign in" onPress={submitPassword} busy={submitting} disabled={!canSignIn} />
-      <View style={styles.divider}>
-        <View style={[styles.line, { backgroundColor: theme.border }]} />
-        <Text style={{ color: theme.textMuted }}>or</Text>
-        <View style={[styles.line, { backgroundColor: theme.border }]} />
-      </View>
-      <Button label="Continue with Google" variant="ghost" onPress={submitGoogle} disabled={submitting} />
+      <GoogleButton onResult={onResult} onError={setError} disabled={submitting} />
       <View style={styles.switch}>
         <Text style={{ color: theme.textSecondary }}>New here?</Text>
         <TextLink label="Create an account" onPress={() => router.push('/register')} />
@@ -151,15 +142,6 @@ export default function SignInScreen() {
 const styles = StyleSheet.create({
   forgot: {
     alignItems: 'flex-end',
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-  },
-  line: {
-    flex: 1,
-    height: StyleSheet.hairlineWidth,
   },
   switch: {
     flexDirection: 'row',

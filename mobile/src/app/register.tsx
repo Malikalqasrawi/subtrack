@@ -4,9 +4,11 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import { authApi } from '@/api/endpoints';
+import type { AuthResponse } from '@/api/types';
 import { AuthScreen } from '@/components/auth-screen';
 import { Banner } from '@/components/banner';
 import { Button } from '@/components/button';
+import { GoogleButton } from '@/components/google-button';
 import { PasswordField } from '@/components/password-field';
 import { TextField } from '@/components/text-field';
 import { TextLink } from '@/components/text-link';
@@ -15,8 +17,10 @@ import { useTheme } from '@/hooks/use-theme';
 import { isValidEmail } from '@/lib/email';
 import { isStrongPassword, isValidPhone, normalizePhone } from '@/lib/password';
 import { pendingVerification } from '@/session/pending-verification';
+import { useSession } from '@/session/session-context';
 
 export default function RegisterScreen() {
+  const { signIn } = useSession();
   const theme = useTheme();
   const router = useRouter();
   const [displayName, setDisplayName] = useState('');
@@ -48,6 +52,12 @@ export default function RegisterScreen() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function onGoogleResult(result: AuthResponse) {
+    if (result.twoFactorRequired) {
+      router.dismissTo({ pathname: '/sign-in', params: { challengeToken: result.challengeToken } });
+    } else await signIn(result);
   }
 
   return (
@@ -95,6 +105,7 @@ export default function RegisterScreen() {
       />
       {error && <Banner message={error} />}
       <Button label="Create account" onPress={submit} busy={submitting} disabled={!complete} />
+      <GoogleButton onResult={onGoogleResult} onError={setError} disabled={submitting} />
       <View style={styles.switch}>
         <Text style={{ color: theme.textSecondary }}>Already have an account?</Text>
         <TextLink label="Sign in" onPress={() => router.dismissTo('/sign-in')} />

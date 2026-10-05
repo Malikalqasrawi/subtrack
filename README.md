@@ -213,7 +213,7 @@ cd frontend && npm run lint && npm test && npm run build
 cd mobile && npm run lint && npm run typecheck && npm test
 ```
 
-101 backend tests, 38 frontend tests and 203 mobile tests. They need no Docker, PostgreSQL, mail server, Google account or network: the backend runs against an in-memory H2 database in PostgreSQL mode, and the frontend and mobile tests replace the API.
+101 backend tests, 38 frontend tests and 206 mobile tests. They need no Docker, PostgreSQL, mail server, Google account or network: the backend runs against an in-memory H2 database in PostgreSQL mode, and the frontend and mobile tests replace the API.
 
 | Backend test | Covers |
 |---|---|
