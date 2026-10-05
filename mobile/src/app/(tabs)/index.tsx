@@ -1,13 +1,18 @@
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import type { CategorySpend, DashboardSummary, RenewalEntry } from '@/api/types';
-import { Avatar } from '@/components/avatar';
+import type { CategorySpend, DashboardSummary, MonthlyProjection, RenewalEntry } from '@/api/types';
 import { Card } from '@/components/card';
+import { CategoryIcon } from '@/components/category-icon';
+import { DonutChart } from '@/components/donut-chart';
+import { LineChart } from '@/components/line-chart';
+import { RenewalTag } from '@/components/renewal-tag';
 import { LoadError, Loading } from '@/components/screen-state';
 import { Fonts, Hero, Radius, Spacing } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
-import { categoryLabel, daysUntil, formatDate, formatMoney, relativeDay } from '@/lib/format';
+import { categoryColors } from '@/lib/categories';
+import { categoryLabel, formatDate, formatMoney, parseIsoDate } from '@/lib/format';
 import { useSummary } from '@/lib/queries';
 import { useCurrentUser } from '@/session/session-context';
 
@@ -40,9 +45,14 @@ export default function DashboardScreen() {
             <UpcomingList upcoming={summary.upcoming} displayCurrency={summary.currency} />
           </Card>
           <Card>
-            <Text style={[styles.cardTitle, { color: theme.text }]}>Monthly spend by category</Text>
+            <Text style={[styles.cardTitle, { color: theme.text }]}>Where it goes</Text>
             <Text style={[styles.cardNote, { color: theme.textSecondary }]}>Average per month, in {summary.currency}.</Text>
-            <CategoryBars categories={summary.byCategory} currency={summary.currency} />
+            <CategoryBreakdown categories={summary.byCategory} currency={summary.currency} />
+          </Card>
+          <Card>
+            <Text style={[styles.cardTitle, { color: theme.text }]}>The next 12 months</Text>
+            <Text style={[styles.cardNote, { color: theme.textSecondary }]}>What each month will charge you.</Text>
+            <Projection projection={summary.projection} currency={summary.currency} />
           </Card>
         </ScrollView>
       )}
@@ -57,7 +67,6 @@ function greetingFor(hour: number) {
 }
 
 function HeroPanel({ summary }: { summary: DashboardSummary }) {
-  const next = summary.upcoming[0];
   return (
     <View style={styles.hero}>
       <Text style={styles.heroLabel}>MONTHLY SPEND</Text>
@@ -66,7 +75,6 @@ function HeroPanel({ summary }: { summary: DashboardSummary }) {
       <View style={styles.heroTiles}>
         <HeroTile label="Per year" value={formatMoney(summary.yearlyTotal, summary.currency)} />
         <HeroTile label="Active" value={String(summary.activeCount)} />
-        <HeroTile label="Next renewal" value={next ? `${next.name} · ${relativeDay(next.date).toLowerCase()}` : 'None in 30 days'} />
       </View>
     </View>
   );
@@ -76,7 +84,9 @@ function HeroTile({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.heroTile}>
       <Text style={styles.heroTileLabel}>{label}</Text>
-      <Text style={styles.heroTileValue}>{value}</Text>
+      <Text style={styles.heroTileValue} numberOfLines={1} adjustsFontSizeToFit>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -86,56 +96,97 @@ function UpcomingList({ upcoming, displayCurrency }: { upcoming: RenewalEntry[];
   if (upcoming.length === 0) return <Text style={{ color: theme.textSecondary }}>Nothing renews in the next 30 days.</Text>;
   return (
     <View style={styles.list}>
-      {upcoming.map((renewal) => {
-        // How much of the 30-day window has already passed: fuller means sooner.
-        const closeness = 1 - Math.max(0, daysUntil(renewal.date)) / UPCOMING_WINDOW_DAYS;
-        return (
-          <View key={renewal.subscriptionId + renewal.date} style={styles.row}>
-            <Avatar name={renewal.name} size={38} />
-            <View style={styles.rowMain}>
-              <Text style={[styles.rowName, { color: theme.text }]} numberOfLines={1}>
-                {renewal.name}
-              </Text>
-              <Text style={[styles.rowNote, { color: theme.textSecondary }]}>
-                {relativeDay(renewal.date)} · {formatDate(renewal.date)}
-              </Text>
-              <View style={[styles.track, { backgroundColor: theme.surfaceAlt }]}>
-                <View style={[styles.trackFill, { backgroundColor: theme.accent, width: `${Math.max(4, closeness * 100)}%` }]} />
-              </View>
-            </View>
-            <View style={styles.rowAmount}>
-              <Text style={[styles.money, { color: theme.text }]}>{formatMoney(renewal.amount, renewal.currency)}</Text>
-              {renewal.currency !== displayCurrency && (
-                <Text style={[styles.rowNote, { color: theme.textSecondary }]}>
-                  ≈ {formatMoney(renewal.convertedAmount, displayCurrency)}
-                </Text>
-              )}
-            </View>
+      {upcoming.map((renewal) => (
+        <View key={renewal.subscriptionId + renewal.date} style={styles.row}>
+          <CategoryIcon category={renewal.category} />
+          <View style={styles.rowMain}>
+            <Text style={[styles.rowName, { color: theme.text }]} numberOfLines={1}>
+              {renewal.name}
+            </Text>
+            <Text style={[styles.rowNote, { color: theme.textSecondary }]}>{formatDate(renewal.date)}</Text>
           </View>
-        );
-      })}
+          <View style={styles.rowAmount}>
+            <Text style={[styles.money, { color: theme.text }]}>{formatMoney(renewal.amount, renewal.currency)}</Text>
+            {renewal.currency !== displayCurrency && (
+              <Text style={[styles.rowNote, { color: theme.textSecondary }]}>
+                ≈ {formatMoney(renewal.convertedAmount, displayCurrency)}
+              </Text>
+            )}
+            <RenewalTag date={renewal.date} />
+          </View>
+        </View>
+      ))}
     </View>
   );
 }
 
-function CategoryBars({ categories, currency }: { categories: CategorySpend[]; currency: string }) {
+function CategoryBreakdown({ categories, currency }: { categories: CategorySpend[]; currency: string }) {
   const theme = useTheme();
-  const largest = Math.max(...categories.map((category) => category.monthlyAmount), 0.01);
+  const dark = useColorScheme() === 'dark';
+  const total = categories.reduce((sum, category) => sum + category.monthlyAmount, 0);
+  if (total <= 0) return <Text style={{ color: theme.textSecondary }}>Add a subscription to see where your money goes.</Text>;
+
+  const colored = categories.map((category) => ({ ...category, color: categoryColors(category.category, dark).solid }));
+  return (
+    <View style={styles.breakdown}>
+      <DonutChart
+        accessibilityLabel={`Spend across ${categories.length} categories`}
+        segments={colored.map((category) => ({ value: category.monthlyAmount, color: category.color }))}>
+        <Text style={[styles.donutValue, { color: theme.text }]}>{categories.length}</Text>
+        <Text style={[styles.rowNote, { color: theme.textSecondary }]}>{categories.length === 1 ? 'category' : 'categories'}</Text>
+      </DonutChart>
+      <View style={styles.legend}>
+        {colored.map((category) => (
+          <View key={category.category} style={styles.legendRow}>
+            <View style={[styles.legendDot, { backgroundColor: category.color }]} />
+            <View style={styles.rowMain}>
+              <Text style={[styles.legendName, { color: theme.text }]} numberOfLines={1}>
+                {categoryLabel(category.category)}
+              </Text>
+              <Text style={[styles.legendAmount, { color: theme.textSecondary }]}>
+                {formatMoney(category.monthlyAmount, currency)}
+              </Text>
+            </View>
+            <Text style={[styles.legendShare, { color: theme.textSecondary }]}>
+              {Math.round((category.monthlyAmount / total) * 100)}%
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const shortMonth = (yearMonth: string) => parseIsoDate(`${yearMonth}-01`).toLocaleDateString(undefined, { month: 'short' });
+
+function Projection({ projection, currency }: { projection: MonthlyProjection[]; currency: string }) {
+  const theme = useTheme();
+  if (projection.length === 0) return null;
+  const busiest = projection.reduce((highest, month) => (month.amount > highest.amount ? month : highest));
+  const total = projection.reduce((sum, month) => sum + month.amount, 0);
   return (
     <View style={styles.list}>
-      {categories.map((category) => (
-        <View key={category.category} style={styles.category}>
-          <View style={styles.categoryHead}>
-            <Text style={{ color: theme.text }}>
-              {categoryLabel(category.category)} <Text style={{ color: theme.textSecondary }}>· {category.count}</Text>
-            </Text>
-            <Text style={[styles.money, { color: theme.text }]}>{formatMoney(category.monthlyAmount, currency)}</Text>
-          </View>
-          <View style={[styles.track, { backgroundColor: theme.surfaceAlt }]}>
-            <View style={[styles.trackFill, { backgroundColor: theme.accent, width: `${(category.monthlyAmount / largest) * 100}%` }]} />
-          </View>
-        </View>
-      ))}
+      <LineChart
+        accessibilityLabel={`Charges for the next ${projection.length} months`}
+        points={projection.map((month) => ({ label: shortMonth(month.month), value: month.amount }))}
+      />
+      <View style={styles.facts}>
+        <Fact label="In total" value={formatMoney(total, currency)} />
+        <Fact label={`Busiest: ${shortMonth(busiest.month)}`} value={formatMoney(busiest.amount, currency)} />
+      </View>
+      <Text style={[styles.rowNote, { color: theme.textMuted }]}>Yearly charges show up in the month they are due.</Text>
+    </View>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  const theme = useTheme();
+  return (
+    <View style={[styles.fact, { backgroundColor: theme.surfaceAlt }]}>
+      <Text style={[styles.rowNote, { color: theme.textSecondary }]}>{label}</Text>
+      <Text style={[styles.money, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -186,11 +237,11 @@ const styles = StyleSheet.create({
   },
   heroTiles: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: Spacing.two,
     marginTop: Spacing.three,
   },
   heroTile: {
+    flex: 1,
     backgroundColor: Hero.tile,
     borderColor: Hero.tileBorder,
     borderWidth: 1,
@@ -205,7 +256,8 @@ const styles = StyleSheet.create({
   },
   heroTileValue: {
     color: Hero.text,
-    fontSize: 15,
+    fontFamily: Fonts.mono,
+    fontSize: 16,
     fontWeight: '700',
   },
   cardTitle: {
@@ -226,7 +278,7 @@ const styles = StyleSheet.create({
   },
   rowMain: {
     flex: 1,
-    gap: Spacing.one,
+    gap: Spacing.half,
   },
   rowName: {
     fontSize: 15,
@@ -237,27 +289,58 @@ const styles = StyleSheet.create({
   },
   rowAmount: {
     alignItems: 'flex-end',
+    gap: Spacing.half,
   },
   money: {
     fontFamily: Fonts.mono,
     fontWeight: '700',
     fontSize: 15,
   },
-  track: {
-    height: 4,
-    borderRadius: 2,
-    overflow: 'hidden',
+  breakdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.four,
   },
-  trackFill: {
-    height: 4,
-    borderRadius: 2,
+  donutValue: {
+    fontFamily: Fonts.mono,
+    fontSize: 26,
+    fontWeight: '700',
   },
-  category: {
+  legend: {
+    flex: 1,
     gap: Spacing.two,
   },
-  categoryHead: {
+  legendRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: Spacing.two,
+  },
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  legendName: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  legendAmount: {
+    fontFamily: Fonts.mono,
+    fontSize: 12,
+  },
+  legendShare: {
+    fontFamily: Fonts.mono,
+    fontSize: 13,
+  },
+  facts: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+  },
+  fact: {
+    flex: 1,
+    borderRadius: Radius.medium,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    gap: Spacing.half,
   },
 });
