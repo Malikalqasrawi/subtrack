@@ -9,6 +9,7 @@ import { Banner, type BannerProps } from '@/components/banner';
 import { Button } from '@/components/button';
 import { CODE_LENGTH, CodeField } from '@/components/code-field';
 import { PasswordField } from '@/components/password-field';
+import { OwnerCode } from '@/components/settings/owner-code';
 import { SettingsSection } from '@/components/settings/section';
 import { TextField } from '@/components/text-field';
 import { Fonts, Radius, Spacing } from '@/constants/theme';
@@ -30,8 +31,9 @@ export function TwoFactorSection() {
   const [code, setCode] = useState('');
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>();
   const [turningOff, setTurningOff] = useState(false);
-  const [confirmingPassword, setConfirmingPassword] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [password, setPassword] = useState('');
+  const [ownerCode, setOwnerCode] = useState('');
   const [result, setResult] = useState<Notice>();
   const [busy, setBusy] = useState(false);
 
@@ -50,11 +52,15 @@ export function TwoFactorSection() {
     }
   }
 
+  const ownerProven = user.hasPassword ? password !== '' : ownerCode.length === CODE_LENGTH;
+
   const begin = () =>
-    run(!user.hasPassword || password !== '', async () => {
-      setSetup(await twoFactorApi.setup(password));
-      setConfirmingPassword(false);
+    run(ownerProven, async () => {
+      const proof = user.hasPassword ? { currentPassword: password } : { confirmationCode: ownerCode };
+      setSetup(await twoFactorApi.setup(proof));
+      setConfirming(false);
       setPassword('');
+      setOwnerCode('');
     }, 'Could not start two-factor setup');
 
   const enable = () =>
@@ -96,9 +102,10 @@ export function TwoFactorSection() {
 
   function cancel() {
     setSetup(undefined);
-    setConfirmingPassword(false);
+    setConfirming(false);
     setTurningOff(false);
     setPassword('');
+    setOwnerCode('');
     setCode('');
     setResult(undefined);
   }
@@ -133,28 +140,32 @@ export function TwoFactorSection() {
         </>
       )}
 
-      {!user.twoFactorEnabled && !setup && !confirmingPassword && (
+      {!user.twoFactorEnabled && !setup && !confirming && (
         <>
           {notice}
           <Button
             label="Set up two-factor"
-            onPress={() => (user.hasPassword ? setConfirmingPassword(true) : begin())}
+            onPress={() => setConfirming(true)}
             busy={busy}
           />
         </>
       )}
 
-      {!user.twoFactorEnabled && !setup && confirmingPassword && (
+      {!user.twoFactorEnabled && !setup && confirming && (
         <>
-          <PasswordField
-            label="Password"
-            value={password}
-            onChange={setPassword}
-            autoComplete="current-password"
-            onSubmit={begin}
-          />
+          {user.hasPassword ? (
+            <PasswordField
+              label="Password"
+              value={password}
+              onChange={setPassword}
+              autoComplete="current-password"
+              onSubmit={begin}
+            />
+          ) : (
+            <OwnerCode code={ownerCode} onChange={setOwnerCode} />
+          )}
           {notice}
-          <Button label="Continue" onPress={begin} busy={busy} disabled={password === ''} />
+          <Button label="Continue" onPress={begin} busy={busy} disabled={!ownerProven} />
           <Button label="Cancel" variant="ghost" onPress={cancel} disabled={busy} />
         </>
       )}

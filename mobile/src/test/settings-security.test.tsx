@@ -43,7 +43,7 @@ describe('two-factor', () => {
     const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
     await startSetup();
 
-    expect(twoFactorApi.setup).toHaveBeenCalledWith(PASSWORD);
+    expect(twoFactorApi.setup).toHaveBeenCalledWith({ currentPassword: PASSWORD });
     expect(screen.getByText('Off')).toBeOnTheScreen();
     expect(screen.getByText('AAAA BBBB CCCC DDDD')).toBeOnTheScreen();
     expect(screen.getByLabelText('QR code for your authenticator app')).toBeOnTheScreen();
@@ -61,7 +61,7 @@ describe('two-factor', () => {
     expect(twoFactorApi.setup).not.toHaveBeenCalled();
 
     await userEvent.type(screen.getByLabelText('Password'), PASSWORD, { submitEditing: true });
-    expect(twoFactorApi.setup).toHaveBeenCalledWith(PASSWORD);
+    expect(twoFactorApi.setup).toHaveBeenCalledWith({ currentPassword: PASSWORD });
 
     await userEvent.type(await screen.findByLabelText('Code'), '12345', { submitEditing: true });
     expect(twoFactorApi.enable).not.toHaveBeenCalled();
@@ -130,14 +130,21 @@ describe('two-factor', () => {
     expect(screen.queryByText('Or type this key by hand:')).not.toBeOnTheScreen();
   });
 
-  it('skips the password step for an account that has no password', async () => {
+  it('asks an account that has no password for an emailed code instead', async () => {
     mockUser.mockReturnValue(user({ hasPassword: false }));
+    jest.mocked(userApi.sendConfirmationCode).mockResolvedValue(undefined);
     jest.mocked(twoFactorApi.setup).mockResolvedValue(SETUP);
     await renderScreen(<TwoFactorSection />);
 
     await userEvent.press(screen.getByRole('button', { name: 'Set up two-factor' }));
+    expect(twoFactorApi.setup).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
 
-    expect(twoFactorApi.setup).toHaveBeenCalledWith('');
+    await userEvent.press(screen.getByRole('button', { name: 'Email me a code' }));
+    await userEvent.type(screen.getByLabelText('Code'), '123456');
+    await userEvent.press(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(twoFactorApi.setup).toHaveBeenCalledWith({ confirmationCode: '123456' });
     expect(await screen.findByText('AAAA BBBB CCCC DDDD')).toBeOnTheScreen();
   });
 
@@ -172,7 +179,7 @@ describe('email address', () => {
     jest.mocked(userApi.confirmEmailChange).mockResolvedValue(changed);
     await requestChange();
 
-    expect(userApi.requestEmailChange).toHaveBeenCalledWith('new@subtrack.example', PASSWORD);
+    expect(userApi.requestEmailChange).toHaveBeenCalledWith('new@subtrack.example', { currentPassword: PASSWORD });
     expect(mockSession.updateUser).not.toHaveBeenCalled();
     expect(screen.getByText('Currently demo@subtrack.example')).toBeOnTheScreen();
 
@@ -237,6 +244,23 @@ describe('email address', () => {
     expect(screen.getByLabelText('New email')).toHaveDisplayValue('new@subtrack.example');
     expect(userApi.confirmEmailChange).not.toHaveBeenCalled();
   });
+
+  it('asks an account without a password for an emailed code before starting the change', async () => {
+    mockUser.mockReturnValue(user({ hasPassword: false }));
+    jest.mocked(userApi.sendConfirmationCode).mockResolvedValue(undefined);
+    jest.mocked(userApi.requestEmailChange).mockResolvedValue(undefined);
+    await renderScreen(<EmailSection />);
+
+    await userEvent.type(screen.getByLabelText('New email'), 'new@subtrack.example');
+    expect(screen.getByRole('button', { name: 'Send confirmation code' })).toBeDisabled();
+
+    await userEvent.press(screen.getByRole('button', { name: 'Email me a code' }));
+    await userEvent.type(screen.getByLabelText('Code'), '123456');
+    await userEvent.press(screen.getByRole('button', { name: 'Send confirmation code' }));
+
+    expect(userApi.requestEmailChange).toHaveBeenCalledWith('new@subtrack.example', { confirmationCode: '123456' });
+    expect(await screen.findByText(/Enter the code we sent to new@subtrack\.example/)).toBeOnTheScreen();
+  });
 });
 
 describe('delete account', () => {
@@ -251,7 +275,7 @@ describe('delete account', () => {
     await userEvent.type(screen.getByLabelText('Your password'), PASSWORD);
     await userEvent.press(screen.getByRole('button', { name: 'Delete forever' }));
 
-    expect(userApi.deleteAccount).toHaveBeenCalledWith(PASSWORD);
+    expect(userApi.deleteAccount).toHaveBeenCalledWith({ currentPassword: PASSWORD });
     expect(mockSession.clearSession).toHaveBeenCalled();
   });
 
@@ -267,19 +291,21 @@ describe('delete account', () => {
     expect(mockSession.clearSession).not.toHaveBeenCalled();
   });
 
-  it('makes an account without a password type DELETE instead', async () => {
+  it('asks an account without a password for an emailed code instead', async () => {
     mockUser.mockReturnValue(user({ hasPassword: false }));
+    jest.mocked(userApi.sendConfirmationCode).mockResolvedValue(undefined);
     jest.mocked(userApi.deleteAccount).mockResolvedValue(undefined);
     await renderScreen(<DangerZone />);
 
     await userEvent.press(screen.getByRole('button', { name: 'Delete my account' }));
-    await userEvent.type(screen.getByLabelText('Type DELETE to confirm'), 'DELET');
+    await userEvent.press(screen.getByRole('button', { name: 'Email me a code' }));
+    await userEvent.type(screen.getByLabelText('Code'), '12345');
     expect(screen.getByRole('button', { name: 'Delete forever' })).toBeDisabled();
 
-    await userEvent.type(screen.getByLabelText('Type DELETE to confirm'), 'E');
+    await userEvent.type(screen.getByLabelText('Code'), '6');
     await userEvent.press(screen.getByRole('button', { name: 'Delete forever' }));
 
-    expect(userApi.deleteAccount).toHaveBeenCalledWith('');
+    expect(userApi.deleteAccount).toHaveBeenCalledWith({ confirmationCode: '123456' });
   });
 
   it('does nothing when the user decides to keep the account', async () => {

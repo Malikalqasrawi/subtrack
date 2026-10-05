@@ -173,7 +173,7 @@ describe('password', () => {
     await userEvent.type(screen.getByLabelText('Confirm new password'), NEW_PASSWORD);
     await userEvent.press(screen.getByRole('button', { name: 'Change password' }));
 
-    expect(userApi.changePassword).toHaveBeenCalledWith('Subtrack#2026', NEW_PASSWORD);
+    expect(userApi.changePassword).toHaveBeenCalledWith({ currentPassword: 'Subtrack#2026' }, NEW_PASSWORD);
     expect(mockSession.replaceSession).toHaveBeenCalledWith(session);
     expect(await screen.findByText('Password changed')).toBeOnTheScreen();
     expect(screen.getByLabelText('Current password')).toHaveDisplayValue('');
@@ -222,8 +222,9 @@ describe('password', () => {
     expect(screen.getByRole('button', { name: 'Change password' })).toBeDisabled();
   });
 
-  it('lets an account that signed up with Google set its first password', async () => {
+  it('lets an account that signed up with Google set its first password with an emailed code', async () => {
     mockUser.mockReturnValue(user({ hasPassword: false }));
+    jest.mocked(userApi.sendConfirmationCode).mockResolvedValue(undefined);
     jest.mocked(userApi.changePassword).mockResolvedValue(session);
     await renderSettings(<PasswordSection />);
 
@@ -231,12 +232,33 @@ describe('password', () => {
     expect(screen.queryByLabelText('Current password')).not.toBeOnTheScreen();
 
     await userEvent.type(screen.getByLabelText('New password'), NEW_PASSWORD);
-
     await userEvent.type(screen.getByLabelText('Confirm new password'), NEW_PASSWORD);
+    // A strong password is not enough: the code proves who is setting it.
+    expect(screen.getByRole('button', { name: 'Set password' })).toBeDisabled();
+
+    await userEvent.press(screen.getByRole('button', { name: 'Email me a code' }));
+    expect(userApi.sendConfirmationCode).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Enter the code we sent to demo@subtrack.example.')).toBeOnTheScreen();
+    expect(screen.getByRole('link', { name: 'Resend in 60s' })).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText('Code'), '123456');
     await userEvent.press(screen.getByRole('button', { name: 'Set password' }));
 
-    expect(userApi.changePassword).toHaveBeenCalledWith('', NEW_PASSWORD);
+    expect(userApi.changePassword).toHaveBeenCalledWith({ confirmationCode: '123456' }, NEW_PASSWORD);
     expect(await screen.findByText('Password set')).toBeOnTheScreen();
+  });
+
+  it('says why when the code could not be emailed', async () => {
+    mockUser.mockReturnValue(user({ hasPassword: false }));
+    jest
+      .mocked(userApi.sendConfirmationCode)
+      .mockRejectedValue(new ApiError(429, 'RATE_LIMITED', 'Wait a minute before requesting another code'));
+    await renderSettings(<PasswordSection />);
+
+    await userEvent.press(screen.getByRole('button', { name: 'Email me a code' }));
+
+    expect(await screen.findByText('Wait a minute before requesting another code')).toBeOnTheScreen();
+    expect(screen.queryByLabelText('Code')).not.toBeOnTheScreen();
   });
 });
 

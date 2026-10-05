@@ -60,8 +60,15 @@ public class UserController {
 			@Valid @RequestBody ChangePasswordRequest request,
 			@RequestHeader(name = SessionResponses.CLIENT_HEADER, required = false) String client) {
 		AuthSession session = accountService.changePassword(me.id(), request.currentPassword(),
-				request.newPassword());
+				request.confirmationCode(), request.newPassword());
 		return sessionResponses.respond(session, client);
+	}
+
+	/** For accounts without a password: the code they send along with a sensitive change. */
+	@PostMapping("/confirmation-code")
+	public ResponseEntity<Void> sendConfirmationCode(@AuthenticationPrincipal AuthenticatedUser me) {
+		accountService.sendConfirmationCode(me.id());
+		return ResponseEntity.accepted().build();
 	}
 
 	@PostMapping("/logout-all")
@@ -73,7 +80,8 @@ public class UserController {
 	@PostMapping("/email")
 	public ResponseEntity<Void> requestEmailChange(@AuthenticationPrincipal AuthenticatedUser me,
 			@Valid @RequestBody ChangeEmailRequest request) {
-		accountService.requestEmailChange(me.id(), request.newEmail(), request.currentPassword());
+		accountService.requestEmailChange(me.id(), request.newEmail(), request.currentPassword(),
+				request.confirmationCode());
 		return ResponseEntity.accepted().build();
 	}
 
@@ -86,7 +94,7 @@ public class UserController {
 	@DeleteMapping
 	public ResponseEntity<Void> delete(@AuthenticationPrincipal AuthenticatedUser me,
 			@Valid @RequestBody DeleteAccountRequest request) {
-		accountService.deleteAccount(me.id(), request.currentPassword());
+		accountService.deleteAccount(me.id(), request.currentPassword(), request.confirmationCode());
 		return ResponseEntity.noContent().header(HttpHeaders.SET_COOKIE, refreshCookies.expire().toString()).build();
 	}
 

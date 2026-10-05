@@ -10,7 +10,10 @@ public enum CodePurpose {
 			"If you did not ask to reset your password, you can ignore this email. Your password has not changed."),
 
 	EMAIL_CHANGE("Confirm your new Subtrack email", "Use this code to confirm this as your new email address:",
-			"If you did not ask for this change, you can ignore this email.");
+			"If you did not ask for this change, you can ignore this email."),
+	ACCOUNT_CONFIRMATION("Confirm a change to your Subtrack account",
+			"Use this code to confirm it is you making the change:",
+			"If you did not ask for this, do not share the code: someone else may be signed in to your account.");
 
 	private final String subject;
 

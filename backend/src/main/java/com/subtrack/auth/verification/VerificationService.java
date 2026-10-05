@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.Optional;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Issues and checks the short codes sent by email. Each purpose has its own, independent code. */
@@ -87,9 +88,10 @@ public class VerificationService {
 
 	/**
 	 * Checks a code and uses it up on success. Reports the result as a value instead of
-	 * throwing so that a failed attempt is committed and counted.
+	 * throwing, and runs in a transaction of its own, so that a failed attempt is committed
+	 * and counted even when the caller's change is rolled back.
 	 */
-	@Transactional
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public VerificationResult verify(User user, CodePurpose purpose, String code) {
 		if (!rateLimiter.tryConsume(limitKey(user, purpose), attemptLimit).allowed()) {
 			return VerificationResult.of(VerificationOutcome.LOCKED);

@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import com.subtrack.auth.token.AccessTokenService;
 import com.subtrack.auth.twofactor.TotpAuthenticator;
 import com.subtrack.auth.twofactor.TotpTestSupport;
 import com.subtrack.mail.EmailDispatcher;
@@ -17,6 +18,7 @@ import com.subtrack.reminder.ReminderService;
 import com.subtrack.support.MutableClock;
 import com.subtrack.support.RecordingMailTransport;
 import com.subtrack.user.UnverifiedAccountCleanup;
+import com.subtrack.user.User;
 import com.subtrack.user.UserRepository;
 import jakarta.servlet.http.Cookie;
 import java.time.Duration;
@@ -66,6 +68,9 @@ class ApiIntegrationTest {
 
 	@Autowired
 	private UnverifiedAccountCleanup unverifiedAccountCleanup;
+
+	@Autowired
+	private AccessTokenService accessTokens;
 
 	@AfterEach
 	void backToNow() {
@@ -665,6 +670,77 @@ class ApiIntegrationTest {
 	}
 
 	@Test
+	void anAccountWithoutAPasswordConfirmsSensitiveChangesWithAnEmailedCode() throws Exception {
+		User account = accountWithoutPassword();
+		String token = "Bearer " + accessTokens.issue(account);
+
+		mvc.perform(json(post("/api/users/me/password"), "{\"newPassword\": \"brand-new-pass-2\"}")
+			.header("Authorization", token))
+			.andExpect(status().isForbidden())
+			.andExpect(jsonPath("$.code").value("CONFIRMATION_REQUIRED"));
+		mvc.perform(json(post("/api/users/me/email"), "{\"newEmail\": \"%s\"}".formatted(newEmail()))
+			.header("Authorization", token)).andExpect(status().isForbidden());
+		mvc.perform(json(post("/api/users/me/2fa/setup"), "{}").header("Authorization", token))
+			.andExpect(status().isForbidden());
+		mvc.perform(json(delete("/api/users/me"), "{}").header("Authorization", token))
+			.andExpect(status().isForbidden());
+
+		mvc.perform(post("/api/users/me/confirmation-code").header("Authorization", token))
+			.andExpect(status().isAccepted());
+		String code = emails.lastCodeFor(account.getEmail());
+		MvcResult changed = mvc
+			.perform(json(post("/api/users/me/password"), newPasswordWithCode("brand-new-pass-2", code))
+				.header("Authorization", token))
+			.andExpect(status().isOk())
+			.andReturn();
+
+		mvc.perform(json(post("/api/auth/login"), credentials(account.getEmail(), "brand-new-pass-2")))
+			.andExpect(status().isOk());
+		// From now on the password is the proof, so no more codes are sent.
+		String newToken = "Bearer " + JsonPath.read(changed.getResponse().getContentAsString(), "$.accessToken");
+		mvc.perform(post("/api/users/me/confirmation-code").header("Authorization", newToken))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("PASSWORD_REQUIRED"));
+	}
+
+	@Test
+	void wrongConfirmationCodesAreCountedAndTheCodeWorksOnce() throws Exception {
+		User account = accountWithoutPassword();
+		String token = "Bearer " + accessTokens.issue(account);
+		mvc.perform(post("/api/users/me/confirmation-code").header("Authorization", token))
+			.andExpect(status().isAccepted());
+		String code = emails.lastCodeFor(account.getEmail());
+		String wrongCode = code.equals("000000") ? "111111" : "000000";
+
+		for (int i = 0; i < 5; i++) {
+			mvc.perform(json(delete("/api/users/me"), "{\"confirmationCode\": \"%s\"}".formatted(wrongCode))
+				.header("Authorization", token))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_CODE"));
+		}
+		// The right code no longer helps: the wrong attempts were kept although each request failed.
+		mvc.perform(json(delete("/api/users/me"), "{\"confirmationCode\": \"%s\"}".formatted(code))
+			.header("Authorization", token))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("TOO_MANY_ATTEMPTS"));
+		mvc.perform(get("/api/users/me").header("Authorization", token)).andExpect(status().isOk());
+	}
+
+	@Test
+	void anAccountWithoutAPasswordIsDeletedWithItsCode() throws Exception {
+		User account = accountWithoutPassword();
+		String token = "Bearer " + accessTokens.issue(account);
+		mvc.perform(post("/api/users/me/confirmation-code").header("Authorization", token))
+			.andExpect(status().isAccepted());
+		String code = emails.lastCodeFor(account.getEmail());
+
+		mvc.perform(json(delete("/api/users/me"), "{\"confirmationCode\": \"%s\"}".formatted(code))
+			.header("Authorization", token)).andExpect(status().isNoContent());
+
+		assertThat(users.findByEmail(account.getEmail())).isEmpty();
+	}
+
+	@Test
 	void publicConfigReportsUnconfiguredProvidersAsNull() throws Exception {
 		mvc.perform(get("/api/public/config"))
 			.andExpect(status().isOk())
@@ -682,6 +758,11 @@ class ApiIntegrationTest {
 			.andExpect(status().isOk())
 			.andReturn();
 		return "Bearer " + JsonPath.read(result.getResponse().getContentAsString(), "$.accessToken");
+	}
+
+	/** An account as a first sign-in with Google or Apple creates it. */
+	private User accountWithoutPassword() {
+		return users.save(User.fromSocialSignIn(newEmail(), "no-password", "Google Person", "USD"));
 	}
 
 	private void register(String email, String password) throws Exception {
@@ -725,6 +806,10 @@ class ApiIntegrationTest {
 
 	private static String refreshToken(String token) {
 		return "{\"refreshToken\": \"%s\"}".formatted(token);
+	}
+
+	private static String newPasswordWithCode(String newPassword, String code) {
+		return "{\"newPassword\": \"%s\", \"confirmationCode\": \"%s\"}".formatted(newPassword, code);
 	}
 
 	private static String currentPassword(String password) {
