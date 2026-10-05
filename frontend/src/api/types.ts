@@ -129,3 +129,12 @@ export interface CalendarMonth {
   total: number
   renewals: RenewalEntry[]
 }
+
+/**
+ * Proof that the owner is making a sensitive change: the password, or for an account that
+ * has none, a code emailed to its address.
+ */
+export interface OwnerProof {
+  currentPassword?: string
+  confirmationCode?: string
+}

@@ -7,6 +7,7 @@ import CodeInput from '../CodeInput'
 import Field from '../Field'
 import PasswordField from '../PasswordField'
 import { useToast } from '../toast'
+import OwnerCode, { OWNER_CODE_LENGTH } from './OwnerCode'
 
 export default function EmailSection() {
   const { updateUser } = useAuth()
@@ -14,6 +15,7 @@ export default function EmailSection() {
   const toast = useToast()
   const [newEmail, setNewEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [ownerCode, setOwnerCode] = useState('')
   // Set once a code has been sent to the new address and is waiting to be confirmed.
   const [pendingEmail, setPendingEmail] = useState<string>()
   const [code, setCode] = useState('')
@@ -23,8 +25,10 @@ export default function EmailSection() {
     event.preventDefault()
     setBusy(true)
     try {
-      await userApi.requestEmailChange(newEmail, password)
+      const proof = user.hasPassword ? { currentPassword: password } : { confirmationCode: ownerCode }
+      await userApi.requestEmailChange(newEmail, proof)
       setPendingEmail(newEmail)
+      setOwnerCode('')
     } catch (err) {
       toast(errorMessage(err, 'Could not start the email change'), 'error')
     } finally {
@@ -76,9 +80,13 @@ export default function EmailSection() {
           <Field label="New email">
             <input type="email" value={newEmail} onChange={(event) => setNewEmail(event.target.value)} autoComplete="email" required />
           </Field>
-          {user.hasPassword && <PasswordField label="Current password" value={password} onChange={setPassword} autoComplete="current-password" />}
+          {user.hasPassword ? (
+            <PasswordField label="Current password" value={password} onChange={setPassword} autoComplete="current-password" />
+          ) : (
+            <OwnerCode code={ownerCode} onChange={setOwnerCode} />
+          )}
           <div className="form-actions">
-            <button className="button primary" disabled={busy}>
+            <button className="button primary" disabled={busy || (!user.hasPassword && ownerCode.length !== OWNER_CODE_LENGTH)}>
               {busy ? 'Sending…' : 'Send confirmation code'}
             </button>
           </div>
