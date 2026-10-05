@@ -36,6 +36,9 @@ public class VerificationService {
 
 	private final RateLimitRule globalIssueLimit;
 
+	/** Compared against when there is no code to check, so that case takes as long as a wrong code. */
+	private final String placeholderCodeHash;
+
 	/**
 	 * Anyone can sign up with any address, so codes for addresses nobody has confirmed yet have a
 	 * budget of their own and cannot use up the one for confirmed accounts.
@@ -50,6 +53,7 @@ public class VerificationService {
 		this.config = properties.verification();
 		this.clock = clock;
 		this.rateLimiter = rateLimiter;
+		this.placeholderCodeHash = passwordEncoder.encode("no-code");
 		this.attemptLimit = new RateLimitRule("code-attempts", "/", config.attemptsPerHour(), Duration.ofHours(1));
 		this.issueLimit = new RateLimitRule("code-issue", "/", config.codesPerDay(), Duration.ofDays(1));
 		this.globalIssueLimit = new RateLimitRule("code-issue-global", "/", config.globalCodesPerHour(),
@@ -100,14 +104,14 @@ public class VerificationService {
 		Optional<VerificationCode> latest = codes.findFirstByUserIdAndPurposeOrderByCreatedAtDesc(user.getId(),
 				purpose);
 		if (latest.isEmpty()) {
-			return VerificationResult.of(VerificationOutcome.INVALID);
+			return withoutCode(VerificationOutcome.INVALID);
 		}
 		VerificationCode current = latest.get();
 		if (current.isExpired(now)) {
-			return VerificationResult.of(VerificationOutcome.EXPIRED);
+			return withoutCode(VerificationOutcome.EXPIRED);
 		}
 		if (current.getAttempts() >= config.maxAttempts()) {
-			return VerificationResult.of(VerificationOutcome.TOO_MANY_ATTEMPTS);
+			return withoutCode(VerificationOutcome.TOO_MANY_ATTEMPTS);
 		}
 		if (!passwordEncoder.matches(code, current.getCodeHash())) {
 			current.registerFailedAttempt();
@@ -117,8 +121,29 @@ public class VerificationService {
 		return new VerificationResult(VerificationOutcome.VERIFIED, current.getTarget());
 	}
 
+	/**
+	 * A code for an email that has no account. It can never be right, but it is counted and
+	 * takes as long as a wrong code for a real account, so the answer does not show which
+	 * emails have one.
+	 */
+	public VerificationResult verifyUnknown(String email, CodePurpose purpose) {
+		if (!rateLimiter.tryConsume(limitKey(email, purpose), attemptLimit).allowed()) {
+			return VerificationResult.of(VerificationOutcome.LOCKED);
+		}
+		return withoutCode(VerificationOutcome.INVALID);
+	}
+
+	private VerificationResult withoutCode(VerificationOutcome outcome) {
+		passwordEncoder.matches("no-code-to-check", placeholderCodeHash);
+		return VerificationResult.of(outcome);
+	}
+
 	private static String limitKey(User user, CodePurpose purpose) {
-		return user.getId() + ":" + purpose;
+		return limitKey(user.getEmail(), purpose);
+	}
+
+	private static String limitKey(String email, CodePurpose purpose) {
+		return email + ":" + purpose;
 	}
 
 }

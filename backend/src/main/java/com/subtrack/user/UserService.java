@@ -1,10 +1,10 @@
 package com.subtrack.user;
 
 import com.subtrack.common.error.BadRequestException;
-import com.subtrack.common.error.ConflictException;
 import com.subtrack.common.error.NotFoundException;
 import com.subtrack.currency.CurrencyConverter;
 import com.subtrack.user.dto.UpdateProfileRequest;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,16 +53,19 @@ public class UserService {
 
 	@Transactional
 	public User changeEmail(UUID id, String newEmail) {
-		requireEmailAvailable(newEmail);
+		Optional<User> holder = users.findByEmail(User.normalizeEmail(newEmail));
+		if (holder.isPresent()) {
+			if (holder.get().isEmailVerified()) {
+				// The code for a taken address is never sent, so this is a guess. Answered like any wrong code.
+				throw new BadRequestException("INVALID_CODE", "That code is invalid or has expired");
+			}
+			// A sign-up that never confirmed the address gives way to the person who just did.
+			users.delete(holder.get());
+			users.flush();
+		}
 		User user = getById(id);
 		user.changeEmail(newEmail);
 		return user;
-	}
-
-	public void requireEmailAvailable(String email) {
-		if (users.findByEmail(User.normalizeEmail(email)).isPresent()) {
-			throw new ConflictException("EMAIL_IN_USE", "That email address is already in use");
-		}
 	}
 
 }

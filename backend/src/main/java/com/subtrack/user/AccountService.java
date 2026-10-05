@@ -1,6 +1,7 @@
 package com.subtrack.user;
 
 import com.subtrack.auth.AuthSession;
+import com.subtrack.auth.ExistingAccountNotice;
 import com.subtrack.auth.alert.SecurityAlert;
 import com.subtrack.auth.alert.SecurityAlertMailer;
 import com.subtrack.auth.session.SessionService;
@@ -11,6 +12,7 @@ import com.subtrack.auth.verification.VerificationService;
 import com.subtrack.common.error.BadRequestException;
 import com.subtrack.common.error.ForbiddenException;
 import com.subtrack.common.error.TooManyRequestsException;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -34,9 +36,11 @@ public class AccountService {
 
 	private final SecurityAlertMailer alerts;
 
+	private final ExistingAccountNotice existingAccountNotice;
+
 	public AccountService(UserRepository users, UserService userService, PasswordEncoder passwordEncoder,
 			VerificationService verificationService, CodeMailer codeMailer, SessionService sessions,
-			SecurityAlertMailer alerts) {
+			SecurityAlertMailer alerts, ExistingAccountNotice existingAccountNotice) {
 		this.users = users;
 		this.userService = userService;
 		this.passwordEncoder = passwordEncoder;
@@ -44,6 +48,7 @@ public class AccountService {
 		this.codeMailer = codeMailer;
 		this.sessions = sessions;
 		this.alerts = alerts;
+		this.existingAccountNotice = existingAccountNotice;
 	}
 
 	/** For sensitive steps handled outside this class, such as starting two-factor setup. */
@@ -92,9 +97,15 @@ public class AccountService {
 		if (normalized.equals(user.getEmail())) {
 			throw new BadRequestException("SAME_EMAIL", "That is already your email address");
 		}
-		userService.requireEmailAvailable(normalized);
 		String code = verificationService.issueCode(user, CodePurpose.EMAIL_CHANGE, normalized)
 			.orElseThrow(() -> new TooManyRequestsException("Wait a minute before requesting another code"));
+		Optional<User> owner = users.findByEmail(normalized).filter(User::isEmailVerified);
+		if (owner.isPresent()) {
+			// The address is someone's account, so the code is not sent. The request is answered and
+			// counted like any other, or it would show who has an account. The owner is told instead.
+			existingAccountNotice.send(owner.get());
+			return;
+		}
 		codeMailer.send(normalized, CodePurpose.EMAIL_CHANGE, code);
 	}
 

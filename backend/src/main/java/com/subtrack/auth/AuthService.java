@@ -193,8 +193,14 @@ public class AuthService {
 	}
 
 	public void resetPassword(ResetPasswordRequest request) {
-		User user = users.findByEmail(User.normalizeEmail(request.email())).orElseThrow(AuthService::invalidCode);
-		verificationService.verify(user, CodePurpose.PASSWORD_RESET, request.code()).requireVerified();
+		String email = User.normalizeEmail(request.email());
+		Optional<User> account = users.findByEmail(email);
+		// An email without an account is checked the same way, and every kind of wrong code gets
+		// the same answer, so this cannot be used to find out who has an account.
+		account.map(found -> verificationService.verify(found, CodePurpose.PASSWORD_RESET, request.code()))
+			.orElseGet(() -> verificationService.verifyUnknown(email, CodePurpose.PASSWORD_RESET))
+			.requireVerifiedWithoutDetails();
+		User user = account.orElseThrow(AuthService::invalidCode);
 		userService.resetPassword(user.getId(), passwordEncoder.encode(request.newPassword()));
 		loginGuard.clearAddresses(user.getId());
 		// Whoever knew the old password is signed out everywhere.
@@ -223,23 +229,30 @@ public class AuthService {
 	}
 
 	private Optional<User> findByCredentials(String email, String password) {
-		Optional<User> user = users.findByEmail(User.normalizeEmail(email));
+		String normalized = User.normalizeEmail(email);
+		Optional<User> user = users.findByEmail(normalized);
 		String address = ClientAddress.current();
 		Instant now = clock.instant();
-		user.ifPresent(found -> requireNotLocked(found, address, now));
+		// An email without an account is locked like a real one, or the lock would give it away.
+		refuseWhileLocked(user.map(found -> loginGuard.lockedUntil(found, address, now))
+			.orElseGet(() -> loginGuard.lockedUntil(normalized, address, now)), now);
 		String hash = user.map(User::getPasswordHash).orElse(dummyPasswordHash);
 		if (passwordEncoder.matches(password, hash)) {
 			return user;
 		}
-		user.ifPresent(found -> {
+		user.ifPresentOrElse(found -> {
 			loginGuard.recordWrong(found, address, now);
 			users.save(found);
-		});
+		}, () -> loginGuard.recordWrong(normalized, address, now));
 		return Optional.empty();
 	}
 
 	private void requireNotLocked(User user, String address, Instant now) {
-		loginGuard.lockedUntil(user, address, now).ifPresent(until -> {
+		refuseWhileLocked(loginGuard.lockedUntil(user, address, now), now);
+	}
+
+	private static void refuseWhileLocked(Optional<Instant> lockedUntil, Instant now) {
+		lockedUntil.ifPresent(until -> {
 			long minutes = Math.max(1, Duration.between(now, until).plusSeconds(59).toMinutes());
 			throw new TooManyRequestsException("ACCOUNT_LOCKED", "Too many wrong attempts. Try again in " + minutes
 					+ (minutes == 1 ? " minute" : " minutes") + ", or reset your password.");

@@ -626,13 +626,6 @@ class ApiIntegrationTest extends PostgresTest {
 		token = "Bearer " + JsonPath.read(changed.getResponse().getContentAsString(), "$.accessToken");
 
 		String newEmail = newEmail();
-		String taken = newEmail();
-		signUp(taken);
-		mvc.perform(json(post("/api/users/me/email"), """
-				{"newEmail": "%s", "currentPassword": "changed-pass-9"}""".formatted(taken))
-			.header("Authorization", token))
-			.andExpect(status().isConflict())
-			.andExpect(jsonPath("$.code").value("EMAIL_IN_USE"));
 		mvc.perform(json(post("/api/users/me/email"), """
 				{"newEmail": "%s", "currentPassword": "changed-pass-9"}""".formatted(newEmail))
 			.header("Authorization", token)).andExpect(status().isAccepted());
@@ -737,6 +730,90 @@ class ApiIntegrationTest extends PostgresTest {
 			.header("Authorization", token)).andExpect(status().isNoContent());
 
 		assertThat(users.findByEmail(account.getEmail())).isEmpty();
+	}
+
+	@Test
+	void aLockDoesNotShowWhetherTheEmailHasAnAccount() throws Exception {
+		String known = newEmail();
+		signUp(known);
+		String unknown = newEmail();
+
+		for (String email : List.of(known, unknown)) {
+			for (int i = 0; i < 5; i++) {
+				mvc.perform(json(post("/api/auth/login"), credentials(email, "wrong-password-1")).with(from("203.0.113.7")))
+					.andExpect(status().isUnauthorized())
+					.andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+			}
+			mvc.perform(json(post("/api/auth/login"), credentials(email, "wrong-password-1")).with(from("203.0.113.7")))
+				.andExpect(status().isTooManyRequests())
+				.andExpect(jsonPath("$.code").value("ACCOUNT_LOCKED"));
+			mvc.perform(json(post("/api/auth/login"), credentials(email, "wrong-password-1")).with(from("203.0.113.8")))
+				.andExpect(status().isUnauthorized());
+		}
+	}
+
+	@Test
+	void wrongResetCodesAnswerTheSameWithOrWithoutAnAccount() throws Exception {
+		String known = newEmail();
+		signUp(known);
+		mvc.perform(json(post("/api/auth/forgot-password"), "{\"email\": \"%s\"}".formatted(known)))
+			.andExpect(status().isAccepted());
+		String realCode = emails.lastCodeFor(known);
+		String wrongCode = realCode.equals("000000") ? "111111" : "000000";
+		String unknown = newEmail();
+
+		for (String email : List.of(known, unknown)) {
+			// The real code stops working after five wrong tries, and the answer does not say so.
+			for (int i = 0; i < 10; i++) {
+				mvc.perform(json(post("/api/auth/reset-password"), reset(email, wrongCode, "brand-new-pass-2")))
+					.andExpect(status().isBadRequest())
+					.andExpect(jsonPath("$.code").value("INVALID_CODE"));
+			}
+			mvc.perform(json(post("/api/auth/reset-password"), reset(email, wrongCode, "brand-new-pass-2")))
+				.andExpect(status().isTooManyRequests());
+		}
+	}
+
+	@Test
+	void changingToAnAddressThatHasAnAccountAnswersLikeAnyOther() throws Exception {
+		String email = newEmail();
+		String token = signUp(email);
+		String taken = newEmail();
+		signUp(taken);
+		String request = """
+				{"newEmail": "%s", "currentPassword": "%s"}""".formatted(taken, PASSWORD);
+
+		mvc.perform(json(post("/api/users/me/email"), request).header("Authorization", token))
+			.andExpect(status().isAccepted());
+
+		// The owner of the address is told. The code is created but sent to nobody.
+		assertThat(subjectsSentTo(taken)).contains("You already have a Subtrack account")
+			.doesNotContain("Confirm your new Subtrack email");
+		// Asking again too soon is refused, exactly as for a free address.
+		mvc.perform(json(post("/api/users/me/email"), request).header("Authorization", token))
+			.andExpect(status().isTooManyRequests());
+		mvc.perform(json(post("/api/users/me/email/confirm"), code("000000")).header("Authorization", token))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INVALID_CODE"));
+		mvc.perform(get("/api/users/me").header("Authorization", token)).andExpect(jsonPath("$.email").value(email));
+	}
+
+	@Test
+	void anUnconfirmedSignUpGivesWayToAnEmailChange() throws Exception {
+		String token = signUp(newEmail());
+		String wanted = newEmail();
+		// Someone typed the address into the sign-up form and never confirmed it.
+		register(wanted, PASSWORD);
+
+		mvc.perform(json(post("/api/users/me/email"), """
+				{"newEmail": "%s", "currentPassword": "%s"}""".formatted(wanted, PASSWORD))
+			.header("Authorization", token)).andExpect(status().isAccepted());
+		mvc.perform(json(post("/api/users/me/email/confirm"), code(emails.lastCodeFor(wanted)))
+			.header("Authorization", token))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.email").value(wanted));
+
+		mvc.perform(json(post("/api/auth/login"), credentials(wanted, PASSWORD))).andExpect(status().isOk());
 	}
 
 	@Test

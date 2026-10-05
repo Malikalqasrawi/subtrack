@@ -23,4 +23,17 @@ public record VerificationResult(VerificationOutcome outcome, String target) {
 		};
 	}
 
+	/**
+	 * The same, with one answer for every kind of wrong code. For requests anyone can send:
+	 * "expired" or "too many attempts" would tell them that the email has an account.
+	 */
+	public VerificationResult requireVerifiedWithoutDetails() {
+		return switch (outcome) {
+			case VERIFIED -> this;
+			case LOCKED -> throw new TooManyRequestsException("Too many attempts. Try again in an hour.");
+			case INVALID, EXPIRED, TOO_MANY_ATTEMPTS ->
+				throw new BadRequestException("INVALID_CODE", "That code is invalid or has expired");
+		};
+	}
+
 }
