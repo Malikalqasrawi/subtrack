@@ -34,7 +34,15 @@ export default function SignInScreen() {
     else await signIn(result);
   }
 
-  async function submit(action: () => Promise<void>, fallback: string) {
+  const canSignIn = email.trim() !== '' && password !== '';
+  const canCheckCode = code.trim().length >= 6;
+
+  /**
+   * Runs one request. Skipped while the form is incomplete or a request is already running:
+   * the buttons are disabled then, but the keyboard's Enter key is not.
+   */
+  async function submit(ready: boolean, action: () => Promise<void>, fallback: string) {
+    if (!ready || submitting) return;
     setSubmitting(true);
     setError(undefined);
     try {
@@ -47,7 +55,7 @@ export default function SignInScreen() {
   }
 
   const submitPassword = () =>
-    submit(async () => {
+    submit(canSignIn, async () => {
       const address = email.trim();
       try {
         await onResult(await authApi.login(address, password));
@@ -61,7 +69,7 @@ export default function SignInScreen() {
     }, 'Could not sign in');
 
   const submitCode = () =>
-    submit(async () => {
+    submit(canCheckCode, async () => {
       if (challengeToken) await signIn(await authApi.twoFactor(challengeToken, code.trim()));
     }, 'Could not check the code');
 
@@ -83,7 +91,7 @@ export default function SignInScreen() {
           onSubmitEditing={submitCode}
         />
         {error && <Banner message={error} />}
-        <Button label="Continue" onPress={submitCode} busy={submitting} disabled={code.trim().length < 6} />
+        <Button label="Continue" onPress={submitCode} busy={submitting} disabled={!canCheckCode} />
         <Button
           label="Back to sign in"
           variant="ghost"
@@ -118,7 +126,7 @@ export default function SignInScreen() {
         />
       </View>
       {error && <Banner message={error} />}
-      <Button label="Sign in" onPress={submitPassword} busy={submitting} disabled={email.trim() === '' || password === ''} />
+      <Button label="Sign in" onPress={submitPassword} busy={submitting} disabled={!canSignIn} />
       <View style={styles.switch}>
         <Text style={{ color: theme.textSecondary }}>New here?</Text>
         <TextLink label="Create an account" onPress={() => router.push('/register')} />

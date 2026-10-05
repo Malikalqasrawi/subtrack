@@ -1,4 +1,4 @@
-import { screen, userEvent } from '@testing-library/react-native';
+import { fireEvent, screen, userEvent } from '@testing-library/react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Linking } from 'react-native';
 
@@ -50,6 +50,21 @@ describe('two-factor', () => {
 
     await userEvent.press(screen.getByRole('button', { name: 'Open authenticator app' }));
     expect(openURL).toHaveBeenCalledWith(SETUP.otpauthUri);
+  });
+
+  it('ignores Enter until the password and then the whole code are typed', async () => {
+    jest.mocked(twoFactorApi.setup).mockResolvedValue(SETUP);
+    await renderScreen(<TwoFactorSection />);
+    await userEvent.press(screen.getByRole('button', { name: 'Set up two-factor' }));
+
+    await fireEvent(screen.getByLabelText('Password'), 'submitEditing');
+    expect(twoFactorApi.setup).not.toHaveBeenCalled();
+
+    await userEvent.type(screen.getByLabelText('Password'), PASSWORD, { submitEditing: true });
+    expect(twoFactorApi.setup).toHaveBeenCalledWith(PASSWORD);
+
+    await userEvent.type(await screen.findByLabelText('Code'), '12345', { submitEditing: true });
+    expect(twoFactorApi.enable).not.toHaveBeenCalled();
   });
 
   it('copies the key as one piece, without the spaces', async () => {
@@ -192,6 +207,14 @@ describe('email address', () => {
 
     expect(await screen.findByText('That email address is already in use')).toBeOnTheScreen();
     expect(screen.queryByLabelText('Code')).not.toBeOnTheScreen();
+  });
+
+  it('ignores Enter until the whole confirmation code is typed', async () => {
+    await requestChange();
+
+    await userEvent.type(screen.getByLabelText('Code'), '12345', { submitEditing: true });
+
+    expect(userApi.confirmEmailChange).not.toHaveBeenCalled();
   });
 
   it('keeps the old email when the code is wrong', async () => {

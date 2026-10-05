@@ -4,6 +4,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
+import { AppearanceProvider, useAppearance } from '@/appearance/appearance-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { queryClient } from '@/lib/query-client';
@@ -14,20 +15,23 @@ SplashScreen.preventAutoHideAsync();
 export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
-      <SessionProvider>
-        <Navigation />
-      </SessionProvider>
+      <AppearanceProvider>
+        <SessionProvider>
+          <Navigation />
+        </SessionProvider>
+      </AppearanceProvider>
     </QueryClientProvider>
   );
 }
 
 function Navigation() {
   const { user } = useSession();
+  const { appearance } = useAppearance();
   const theme = useTheme();
   const dark = useColorScheme() !== 'light';
-  const restoring = user === undefined;
+  const restoring = user === undefined || appearance === undefined;
 
-  // The splash screen stays up until we know whether a saved session exists.
+  // The splash screen stays up until we know whether a saved session exists and which look was chosen.
   useEffect(() => {
     if (!restoring) SplashScreen.hideAsync();
   }, [restoring]);

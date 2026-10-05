@@ -35,8 +35,9 @@ export function TwoFactorSection() {
   const [result, setResult] = useState<Notice>();
   const [busy, setBusy] = useState(false);
 
-  /** Runs one request, showing why if it fails. */
-  async function run(action: () => Promise<void>, failure: string) {
+  /** Runs one request, showing why if it fails. Skipped while `ready` is false or a request is already running. */
+  async function run(ready: boolean, action: () => Promise<void>, failure: string) {
+    if (!ready || busy) return;
     setBusy(true);
     setResult(undefined);
     try {
@@ -50,14 +51,14 @@ export function TwoFactorSection() {
   }
 
   const begin = () =>
-    run(async () => {
+    run(!user.hasPassword || password !== '', async () => {
       setSetup(await twoFactorApi.setup(password));
       setConfirmingPassword(false);
       setPassword('');
     }, 'Could not start two-factor setup');
 
   const enable = () =>
-    run(async () => {
+    run(code.length === CODE_LENGTH, async () => {
       const enabled = await twoFactorApi.enable(code);
       setRecoveryCodes(enabled.recoveryCodes);
       setSetup(undefined);
@@ -67,7 +68,7 @@ export function TwoFactorSection() {
     }, 'Could not turn on two-factor authentication');
 
   const disable = () =>
-    run(async () => {
+    run(code.length >= CODE_LENGTH, async () => {
       await twoFactorApi.disable(code);
       setTurningOff(false);
       setRecoveryCodes(undefined);

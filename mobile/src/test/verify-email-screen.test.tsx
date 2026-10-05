@@ -55,6 +55,14 @@ describe('VerifyEmailScreen', () => {
     expect(pendingVerification.get()).toBeNull();
   });
 
+  it('ignores Enter until all six digits are typed', async () => {
+    await renderScreen(<VerifyEmailScreen />);
+
+    await userEvent.type(screen.getByLabelText('Code'), '12345', { submitEditing: true });
+
+    expect(authApi.verify).not.toHaveBeenCalled();
+  });
+
   it('shows why a code was refused and clears the box for another try', async () => {
     jest.mocked(authApi.verify).mockRejectedValue(new ApiError(400, 'INVALID_CODE', 'That code is invalid or has expired'));
     await renderScreen(<VerifyEmailScreen />);

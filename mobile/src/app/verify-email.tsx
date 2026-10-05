@@ -30,6 +30,7 @@ export default function VerifyEmailScreen() {
   const { email, password } = credentials;
 
   async function submit() {
+    if (code.length !== CODE_LENGTH || submitting) return;
     setSubmitting(true);
     setError(undefined);
     setNotice(undefined);

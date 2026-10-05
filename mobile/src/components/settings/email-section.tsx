@@ -46,6 +46,7 @@ export function EmailSection() {
   }
 
   async function confirm() {
+    if (code.length !== CODE_LENGTH || busy) return;
     setBusy(true);
     setResult(undefined);
     try {
