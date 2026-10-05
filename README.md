@@ -215,7 +215,7 @@ cd frontend && npm run lint && npm test && npm run build
 cd mobile && npm run lint && npm run typecheck && npm test
 ```
 
-130 backend tests, 38 frontend tests and 215 mobile tests. They need no mail server or Google account. The backend tests need Docker: they start a throwaway PostgreSQL 17 (Testcontainers; Colima is picked up by itself) and connect to it the way the deployed application does. The frontend and mobile tests replace the API.
+130 backend tests, 43 frontend tests and 215 mobile tests. They need no mail server or Google account. The backend tests need Docker: they start a throwaway PostgreSQL 17 (Testcontainers; Colima is picked up by itself) and connect to it the way the deployed application does. The frontend and mobile tests replace the API.
 
 | Backend test | Covers |
 |---|---|
@@ -244,6 +244,7 @@ cd mobile && npm run lint && npm run typecheck && npm test
 | `queries.test.tsx` | Deleting before the server answers and putting the card back if it refuses, create and update, refreshing the totals |
 | `SubscriptionForm.test.tsx` | Popular-service presets, the request that is sent, editing, server field errors, closing with Escape |
 | `LoginPage.test.tsx` | Sign-in, the two-factor step, an expired challenge, a locked account, unverified accounts |
+| `OwnerCode.test.tsx` | Accounts without a password confirming a new password, an email change, two-factor setup and deletion with an emailed code; accounts with a password still using it |
 | `format.test.ts`, `password.test.ts`, `errors.test.ts` | Dates and relative days, the password rules and phone format, error messages |
 
 | Mobile test | Covers |

@@ -4,12 +4,10 @@ import type { FormEvent } from 'react'
 import { userApi } from '../../api/endpoints'
 import { useAuth, useCurrentUser } from '../../auth/useAuth'
 import { errorMessage } from '../../lib/errors'
-import Field from '../Field'
 import Modal from '../Modal'
 import PasswordField from '../PasswordField'
 import { useToast } from '../toast'
-
-const CONFIRM_WORD = 'DELETE'
+import OwnerCode, { OWNER_CODE_LENGTH } from './OwnerCode'
 
 export default function DangerZone() {
   const { clearSession } = useAuth()
@@ -17,14 +15,14 @@ export default function DangerZone() {
   const toast = useToast()
   const [open, setOpen] = useState(false)
   const [password, setPassword] = useState('')
-  const [typed, setTyped] = useState('')
+  const [ownerCode, setOwnerCode] = useState('')
   const [deleting, setDeleting] = useState(false)
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault()
     setDeleting(true)
     try {
-      await userApi.deleteAccount(password)
+      await userApi.deleteAccount(user.hasPassword ? { currentPassword: password } : { confirmationCode: ownerCode })
       toast('Your account has been deleted')
       clearSession()
     } catch (err) {
@@ -52,15 +50,13 @@ export default function DangerZone() {
               {user.hasPassword ? (
                 <PasswordField label="Your password" value={password} onChange={setPassword} autoComplete="current-password" autoFocus />
               ) : (
-                <Field label={`Type ${CONFIRM_WORD} to confirm`}>
-                  <input value={typed} onChange={(event) => setTyped(event.target.value)} required autoFocus />
-                </Field>
+                <OwnerCode code={ownerCode} onChange={setOwnerCode} />
               )}
               <div className="form-actions">
                 <button type="button" className="button ghost" onClick={() => setOpen(false)}>
                   Keep my account
                 </button>
-                <button className="button danger-solid" disabled={deleting || (!user.hasPassword && typed !== CONFIRM_WORD)}>
+                <button className="button danger-solid" disabled={deleting || (!user.hasPassword && ownerCode.length !== OWNER_CODE_LENGTH)}>
                   {deleting ? 'Deleting…' : 'Delete forever'}
                 </button>
               </div>

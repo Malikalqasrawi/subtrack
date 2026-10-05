@@ -10,6 +10,7 @@ import Field from '../Field'
 import Icon from '../Icon'
 import PasswordField from '../PasswordField'
 import { useToast } from '../toast'
+import OwnerCode, { OWNER_CODE_LENGTH } from './OwnerCode'
 
 export default function TwoFactorSection() {
   const { updateUser } = useAuth()
@@ -21,6 +22,7 @@ export default function TwoFactorSection() {
   const [turningOff, setTurningOff] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [password, setPassword] = useState('')
+  const [ownerCode, setOwnerCode] = useState('')
   const [busy, setBusy] = useState(false)
 
   /** Runs one request, showing a toast if it fails. */
@@ -39,9 +41,11 @@ export default function TwoFactorSection() {
   const begin = (event?: FormEvent) => {
     event?.preventDefault()
     return run(async () => {
-      setSetup(await twoFactorApi.setup(password))
+      const proof = user.hasPassword ? { currentPassword: password } : { confirmationCode: ownerCode }
+      setSetup(await twoFactorApi.setup(proof))
       setConfirming(false)
       setPassword('')
+      setOwnerCode('')
     }, 'Could not start two-factor setup')
   }
 
@@ -109,7 +113,7 @@ export default function TwoFactorSection() {
 
       {!user.twoFactorEnabled && !setup && !confirming && (
         <div className="form-actions start">
-          <button className="button primary" onClick={() => (user.hasPassword ? setConfirming(true) : begin())} disabled={busy}>
+          <button className="button primary" onClick={() => setConfirming(true)} disabled={busy}>
             <Icon name="shield" size={16} /> Set up two-factor
           </button>
         </div>
@@ -117,12 +121,16 @@ export default function TwoFactorSection() {
 
       {!user.twoFactorEnabled && !setup && confirming && (
         <form onSubmit={begin} className="form">
-          <PasswordField label="Current password" value={password} onChange={setPassword} autoComplete="current-password" autoFocus />
+          {user.hasPassword ? (
+            <PasswordField label="Current password" value={password} onChange={setPassword} autoComplete="current-password" autoFocus />
+          ) : (
+            <OwnerCode code={ownerCode} onChange={setOwnerCode} />
+          )}
           <div className="form-actions">
             <button type="button" className="button ghost" onClick={() => setConfirming(false)}>
               Cancel
             </button>
-            <button className="button primary" disabled={busy || password === ''}>
+            <button className="button primary" disabled={busy || (user.hasPassword ? password === '' : ownerCode.length !== OWNER_CODE_LENGTH)}>
               Continue
             </button>
           </div>

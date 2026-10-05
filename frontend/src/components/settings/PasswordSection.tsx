@@ -6,6 +6,7 @@ import { errorMessage } from '../../lib/errors'
 import { isStrongPassword } from '../../lib/password'
 import PasswordField from '../PasswordField'
 import { useToast } from '../toast'
+import OwnerCode, { OWNER_CODE_LENGTH } from './OwnerCode'
 
 export default function PasswordSection() {
   const { startSession } = useAuth()
@@ -13,6 +14,7 @@ export default function PasswordSection() {
   const toast = useToast()
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
+  const [ownerCode, setOwnerCode] = useState('')
   const [saving, setSaving] = useState(false)
 
   async function onSubmit(event: FormEvent) {
@@ -20,10 +22,12 @@ export default function PasswordSection() {
     setSaving(true)
     try {
       // The server signs out every other device and hands this one a fresh session.
-      startSession(await userApi.changePassword(current, next))
+      const proof = user.hasPassword ? { currentPassword: current } : { confirmationCode: ownerCode }
+      startSession(await userApi.changePassword(proof, next))
       toast(user.hasPassword ? 'Password changed' : 'Password set')
       setCurrent('')
       setNext('')
+      setOwnerCode('')
     } catch (err) {
       toast(errorMessage(err, 'Could not change the password'), 'error')
     } finally {
@@ -38,10 +42,14 @@ export default function PasswordSection() {
         <p className="muted small">You signed up with Google or Apple. Add a password to also sign in with your email.</p>
       )}
       <form onSubmit={onSubmit} className="form">
-        {user.hasPassword && <PasswordField label="Current password" value={current} onChange={setCurrent} autoComplete="current-password" />}
+        {user.hasPassword ? (
+          <PasswordField label="Current password" value={current} onChange={setCurrent} autoComplete="current-password" />
+        ) : (
+          <OwnerCode code={ownerCode} onChange={setOwnerCode} />
+        )}
         <PasswordField label="New password" value={next} onChange={setNext} autoComplete="new-password" showRules />
         <div className="form-actions">
-          <button className="button primary" disabled={saving || !isStrongPassword(next)}>
+          <button className="button primary" disabled={saving || !isStrongPassword(next) || (!user.hasPassword && ownerCode.length !== OWNER_CODE_LENGTH)}>
             {saving ? 'Saving…' : user.hasPassword ? 'Change password' : 'Set password'}
           </button>
         </div>
